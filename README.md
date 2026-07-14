@@ -11,13 +11,7 @@ The in-store associate app for Le Targét — sign in, build a sale, take paymen
 Team Targét is what a Le Targét store associate actually uses on the floor. It does **not** cover:
 
 - The public-facing Le Targét website
-- Corporate-side systems — order placement, identity/API infrastructure. Deliberately a separate, later project (see the ADR, §1.1 and §17).
-- [`inventory-reconciliation`](#) — a related but independent repo (Temporal-based, JWT-authenticated store edge APIs), built by [other developer].
-
-## Start here
-
-- **[`ADR-associate-roles-and-identity-state.md`](./ADR-associate-roles-and-identity-state.md)** — the architecture. Every role, permission, state machine, and "why we didn't do it the obvious way" decision behind this app lives here, organized by section, with rejected alternatives kept rather than deleted. Read this before touching the code.
-- **`demo-build-tiering.md`** — what's actually real vs. mocked, and at what fidelity (Real / Faked+Logic / Faked+Static / Does Not Exist). The ADR describes the *design*; this tracks what's *built*. Don't infer build status from the ADR alone — check here.
+- The back-end api supporting the website
 
 ## Why this exists
 
@@ -25,14 +19,10 @@ Team Targét isn't trying to be a finished product. It's an argument, made in wo
 
 The code and docs here are annotated on purpose — comments explain *why* a decision was made, not just what it does. If something looks over-engineered for a demo, it's probably the point being made, not a mistake.
 
-## A note on naming
-
-This repo used to be `point-of-sale-ui` — "the checkout terminal for Le Targét guests." It outgrew that name once roles, receiving, and fulfillment showed up; a POS that also schedules shifts and posts store announcements isn't a POS anymore. Full naming history, including the names that didn't make it, is in ADR §2.
-
 ## Stack
 
 - Angular
-- No backend, for now — deliberately mocked data. That's changing (ADR §1.1); timeline and design are a separate, later conversation.
+- C#
 
 ## Contributing
 
