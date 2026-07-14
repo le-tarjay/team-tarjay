@@ -1,0 +1,60 @@
+<nav class="navbar navbar-expand navbar-dark app-navbar px-4">
+  <a class="navbar-brand fw-semibold" routerLink="/sale">
+    Le Targét POS
+  </a>
+
+  <div class="navbar-nav me-auto">
+    <a
+      class="nav-link"
+      routerLink="/sale"
+      routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      Sale
+    </a>
+
+    <a
+      class="nav-link"
+      routerLink="/products"
+      routerLinkActive="active"
+    >
+      Products
+    </a>
+
+    <a
+      class="nav-link"
+      routerLink="/sales"
+      routerLinkActive="active"
+    >
+      Sales
+    </a>
+
+    <a
+      class="nav-link"
+      routerLink="/buyers"
+      routerLinkActive="active"
+    >
+      Buyers
+    </a>
+  </div>
+
+  <div class="d-flex align-items-center gap-3">
+    @if (currentEmployee(); as employee) {
+      <span class="navbar-text small">
+        Signed in as <strong>{{ employee.name }}</strong>
+      </span>
+    }
+
+    <button
+      type="button"
+      class="btn btn-outline-light btn-sm"
+      (click)="logout()"
+    >
+      Logout
+    </button>
+  </div>
+</nav>
+
+<main class="app-main">
+  <router-outlet />
+</main>

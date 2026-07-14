@@ -1,0 +1,74 @@
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1">Payment</h1>
+      <p class="text-secondary mb-0">
+        Select tender, process payment, and confirm the sale.
+      </p>
+    </div>
+
+    @if (!receipt()) {
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        (click)="goBackToSale()"
+      >
+        Back to Sale
+      </button>
+    }
+  </div>
+
+  @if (receipt()) {
+    <div class="row justify-content-center">
+      <div class="col-12 col-lg-6">
+        <app-payment-confirmation
+          [receipt]="receipt()"
+          (startNewSale)="startNewSale()"
+        />
+      </div>
+    </div>
+  } @else {
+    <div class="row g-4">
+      <div class="col-12 col-lg-5">
+        <app-sale-summary
+          [customerName]="customerName()"
+          [subtotal]="subtotal()"
+          [tax]="tax()"
+          [total]="total()"
+          [readonly]="true"
+        />
+      </div>
+
+      <div class="col-12 col-lg-4">
+        <app-tender-selector
+          [total]="total()"
+          [disabled]="isProcessing()"
+          (tenderChanged)="updateTender($event)"
+        />
+      </div>
+
+      <div class="col-12 col-lg-3">
+        <div class="card border-0 shadow-sm mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between mb-2">
+              <span class="text-secondary">Tendered</span>
+              <span>{{ tenderedAmount() | currency }}</span>
+            </div>
+
+            <div class="d-flex justify-content-between">
+              <span class="text-secondary">Remaining</span>
+              <span>{{ amountRemaining() | currency }}</span>
+            </div>
+          </div>
+        </div>
+
+        <app-payment-confirmation
+          [canProcess]="canProcess()"
+          [isProcessing]="isProcessing()"
+          [errorMessage]="errorMessage()"
+          (processPayment)="processPayment()"
+        />
+      </div>
+    </div>
+  }
+</div>

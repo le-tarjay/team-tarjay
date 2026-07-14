@@ -1,0 +1,24 @@
+<div class="container py-4">
+  <div class="mb-4">
+    <h1 class="h3 mb-1">Products</h1>
+    <p class="text-secondary mb-0">
+      Review the products available in the POS catalog.
+    </p>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" role="alert">
+      {{ errorMessage() }}
+    </div>
+  }
+
+  <app-data-table
+    title="Product Catalog"
+    description="Search by SKU, name, or price."
+    [columns]="columns"
+    [rows]="products()"
+    [isLoading]="isLoading()"
+    emptyMessage="No products found."
+    searchPlaceholder="Search products"
+  />
+</div>

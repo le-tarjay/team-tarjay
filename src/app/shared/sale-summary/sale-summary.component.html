@@ -1,0 +1,39 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Sale Summary</h2>
+
+    <div class="mb-3">
+      <label for="customerName" class="form-label">
+        Customer Name
+      </label>
+
+      <input
+        id="customerName"
+        name="customerName"
+        type="text"
+        class="form-control"
+        placeholder="Walk-in customer"
+        [disabled]="isReadonly()"
+        [ngModel]="customerName()"
+        (ngModelChange)="customerNameChanged.emit($event)"
+      />
+    </div>
+
+    <div class="d-flex justify-content-between mb-2">
+      <span class="text-secondary">Subtotal</span>
+      <span>{{ subtotal() | currency }}</span>
+    </div>
+
+    <div class="d-flex justify-content-between mb-2">
+      <span class="text-secondary">Tax</span>
+      <span>{{ tax() | currency }}</span>
+    </div>
+
+    <hr />
+
+    <div class="d-flex justify-content-between fs-5 fw-bold">
+      <span>Total</span>
+      <span>{{ total() | currency }}</span>
+    </div>
+  </div>
+</div>

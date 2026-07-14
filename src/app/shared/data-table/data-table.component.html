@@ -1,0 +1,75 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        @if (title()) {
+          <h2 class="h5 mb-1">{{ title() }}</h2>
+        }
+
+        @if (description()) {
+          <p class="text-secondary small mb-0">{{ description() }}</p>
+        }
+      </div>
+
+      @if (enableSearch()) {
+        <div class="table-search">
+          <input
+            name="tableSearch"
+            type="search"
+            class="form-control form-control-sm"
+            [placeholder]="searchPlaceholder()"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+          />
+        </div>
+      }
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            @for (column of columns(); track column.key) {
+              <th
+                scope="col"
+                [class.text-center]="column.align === 'center'"
+                [class.text-end]="column.align === 'end'"
+              >
+                {{ column.label }}
+              </th>
+            }
+          </tr>
+        </thead>
+
+        <tbody>
+          @if (isLoading()) {
+            <tr>
+              <td class="text-secondary py-4" [attr.colspan]="columns().length">
+                Loading...
+              </td>
+            </tr>
+          } @else {
+            @for (row of filteredRows(); track $index) {
+              <tr>
+                @for (column of columns(); track column.key) {
+                  <td
+                    [class.text-center]="column.align === 'center'"
+                    [class.text-end]="column.align === 'end'"
+                  >
+                    {{ formatCell(row, column) }}
+                  </td>
+                }
+              </tr>
+            } @empty {
+              <tr>
+                <td class="text-secondary py-4" [attr.colspan]="columns().length">
+                  {{ emptyMessage() }}
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

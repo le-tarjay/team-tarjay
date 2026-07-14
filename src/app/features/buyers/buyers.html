@@ -1,0 +1,24 @@
+<div class="container py-4">
+  <div class="mb-4">
+    <h1 class="h3 mb-1">Buyers</h1>
+    <p class="text-secondary mb-0">
+      Review customer records and loyalty activity.
+    </p>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" role="alert">
+      {{ errorMessage() }}
+    </div>
+  }
+
+  <app-data-table
+    title="Buyer Directory"
+    description="Search by name, email, phone, loyalty level, or visit date."
+    [columns]="columns"
+    [rows]="buyers()"
+    [isLoading]="isLoading()"
+    emptyMessage="No buyers found."
+    searchPlaceholder="Search buyers"
+  />
+</div>

@@ -1,0 +1,35 @@
+@let saleItem = item();
+
+<div class="sale-line-item d-flex align-items-center gap-3 py-3 border-bottom">
+  <div class="flex-grow-1">
+    <div class="fw-semibold">
+      {{ saleItem.product.name }}
+    </div>
+
+    <div class="small text-secondary">
+      {{ saleItem.product.sku }} · {{ saleItem.product.price | currency }} each
+    </div>
+  </div>
+
+  <div class="btn-group" role="group" aria-label="Quantity controls">
+    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="decreaseQuantity()">
+      -
+    </button>
+
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>
+      {{ saleItem.quantity }}
+    </button>
+
+    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="increaseQuantity()">
+      +
+    </button>
+  </div>
+
+  <div class="line-total text-end fw-semibold">
+    {{ lineTotal() | currency }}
+  </div>
+
+  <button type="button" class="btn btn-outline-danger btn-sm" (click)="remove()">
+    Remove
+  </button>
+</div>

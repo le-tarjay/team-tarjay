@@ -1,0 +1,63 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Tender</h2>
+
+    <div class="btn-group w-100 mb-3" role="group" aria-label="Tender type">
+      <input
+        id="cashTender"
+        type="radio"
+        class="btn-check"
+        name="tenderType"
+        [checked]="tenderType() === 'cash'"
+        [disabled]="disabled()"
+        (change)="selectTender('cash')"
+      />
+      <label class="btn btn-outline-primary" for="cashTender">Cash</label>
+
+      <input
+        id="cardTender"
+        type="radio"
+        class="btn-check"
+        name="tenderType"
+        [checked]="tenderType() === 'card'"
+        [disabled]="disabled()"
+        (change)="selectTender('card')"
+      />
+      <label class="btn btn-outline-primary" for="cardTender">Card</label>
+    </div>
+
+    <div class="mb-3">
+      <label for="tenderedAmount" class="form-label">Tendered Amount</label>
+      <div class="input-group">
+        <span class="input-group-text">$</span>
+        <input
+          id="tenderedAmount"
+          name="tenderedAmount"
+          type="number"
+          min="0"
+          step="0.01"
+          class="form-control"
+          [disabled]="disabled() || tenderType() === 'card'"
+          [ngModel]="tenderedAmount()"
+          (ngModelChange)="updateTenderedAmount($event)"
+        />
+      </div>
+
+      @if (tenderType() === 'card') {
+        <div class="form-text">
+          Card payments charge the exact sale total.
+        </div>
+      }
+    </div>
+
+    <div class="d-flex justify-content-between mb-2">
+      <span class="text-secondary">Amount Due</span>
+      <span class="fw-semibold">{{ total() | currency }}</span>
+    </div>
+
+    <div class="d-flex justify-content-between">
+      <span class="text-secondary">Change Due</span>
+      <span class="fw-semibold">{{ changeDue() | currency }}</span>
+    </div>
+  </div>
+</div>

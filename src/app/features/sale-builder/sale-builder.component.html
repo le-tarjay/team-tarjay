@@ -1,0 +1,55 @@
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1">Sale Builder</h1>
+      <p class="text-secondary mb-0">
+        Search products, build the sale, and continue to payment.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      class="btn btn-success btn-lg"
+      [disabled]="!hasActiveSale()"
+      (click)="goToPayment()"
+    >
+      Continue to Payment
+    </button>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-12 col-lg-5">
+      <app-product-search
+        (productSelected)="addProduct($event)"
+      />
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h5 mb-3">Current Sale</h2>
+
+          @for (item of lineItems(); track item.product.id) {
+            <app-sale-line-item
+              [item]="item"
+              (quantityChanged)="updateQuantity(item.product.id, $event)"
+              (removed)="removeProduct(item.product.id)"
+            />
+          } @empty {
+            <div class="text-secondary">
+              No products added yet. The cart is still a tiny empty basket.
+            </div>
+          }
+        </div>
+      </div>
+
+      <app-sale-summary
+        [customerName]="customerName()"
+        [subtotal]="subtotal()"
+        [tax]="tax()"
+        [total]="total()"
+        (customerNameChanged)="updateCustomerName($event)"
+      />
+    </div>
+  </div>
+</div>

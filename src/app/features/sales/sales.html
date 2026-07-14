@@ -1,0 +1,24 @@
+<div class="container py-4">
+  <div class="mb-4">
+    <h1 class="h3 mb-1">Sales</h1>
+    <p class="text-secondary mb-0">
+      Review recent sales without touching the active sale state.
+    </p>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" role="alert">
+      {{ errorMessage() }}
+    </div>
+  }
+
+  <app-data-table
+    title="Recent Sales"
+    description="Search by confirmation number, customer, tender, or status."
+    [columns]="columns"
+    [rows]="sales()"
+    [isLoading]="isLoading()"
+    emptyMessage="No sales found."
+    searchPlaceholder="Search sales"
+  />
+</div>
