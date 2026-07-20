@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Solution Items", "_Solution Items", "{8D992E62-9ABB-4CB9-B510-8D031F457F48}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		CONVENTIONS.md = CONVENTIONS.md
+		Directory.Build.props = Directory.Build.props
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{99EFB62B-B1A1-46E1-994F-411B770028EE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{DA1B0589-05E5-4CE8-857E-51A83B83359B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tarjay.Team.Api", "src\Tarjay.Team.Api\Tarjay.Team.Api.csproj", "{FE777253-0D0A-42B0-A173-DC379B94050D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tarjay.Team.Domain", "src\Tarjay.Team.Domain\Tarjay.Team.Domain.csproj", "{B9E1EFFA-5647-4623-8B1C-6A19AF808F63}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tarjay.Team.Domain.UnitTests", "tests\Tarjay.Team.Domain.UnitTests\Tarjay.Team.Domain.UnitTests.csproj", "{420592B9-F5DE-4D10-92E4-3122626039EE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tarjay.Team.Api.IntegrationTests", "tests\Tarjay.Team.Api.IntegrationTests\Tarjay.Team.Api.IntegrationTests.csproj", "{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FE777253-0D0A-42B0-A173-DC379B94050D} = {99EFB62B-B1A1-46E1-994F-411B770028EE}
+		{B9E1EFFA-5647-4623-8B1C-6A19AF808F63} = {99EFB62B-B1A1-46E1-994F-411B770028EE}
+		{420592B9-F5DE-4D10-92E4-3122626039EE} = {DA1B0589-05E5-4CE8-857E-51A83B83359B}
+		{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD} = {DA1B0589-05E5-4CE8-857E-51A83B83359B}
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FE777253-0D0A-42B0-A173-DC379B94050D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE777253-0D0A-42B0-A173-DC379B94050D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE777253-0D0A-42B0-A173-DC379B94050D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE777253-0D0A-42B0-A173-DC379B94050D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9E1EFFA-5647-4623-8B1C-6A19AF808F63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9E1EFFA-5647-4623-8B1C-6A19AF808F63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9E1EFFA-5647-4623-8B1C-6A19AF808F63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9E1EFFA-5647-4623-8B1C-6A19AF808F63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{420592B9-F5DE-4D10-92E4-3122626039EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{420592B9-F5DE-4D10-92E4-3122626039EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{420592B9-F5DE-4D10-92E4-3122626039EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{420592B9-F5DE-4D10-92E4-3122626039EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40DF4AC8-C5E7-426E-825A-F0C39DE53DFD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
