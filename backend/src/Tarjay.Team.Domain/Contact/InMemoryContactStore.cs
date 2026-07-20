@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,39 +15,39 @@ namespace Tarjay.Team.Contact;
 /// </summary>
 public sealed class InMemoryContactStore : IContactStore
 {
-  private readonly ConcurrentDictionary<string, Contact> _byExternalId =
-    new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Contact> _byExternalId =
+      new(StringComparer.OrdinalIgnoreCase);
 
-  private int _nextId;
+    private int _nextId;
 
-  public (Contact Contact, bool WasCreated) Upsert(Contact contact)
-  {
-    ArgumentNullException.ThrowIfNull(contact);
+    public (Contact Contact, bool WasCreated) Upsert(Contact contact)
+    {
+        ArgumentNullException.ThrowIfNull(contact);
 
-    var wasCreated = false;
+        var wasCreated = false;
 
-    var stored = _byExternalId.AddOrUpdate(
-      contact.ExternalId,
-      _ =>
-      {
-        wasCreated = true;
-        contact.ContactId = System.Threading.Interlocked.Increment(ref _nextId);
-        return contact;
-      },
-      (_, existing) =>
-      {
-        // Preserve the id assigned on first insert; update the mutable fields.
-        contact.ContactId = existing.ContactId;
-        return contact;
-      });
+        var stored = _byExternalId.AddOrUpdate(
+          contact.ExternalId,
+          _ =>
+          {
+              wasCreated = true;
+              contact.ContactId = System.Threading.Interlocked.Increment(ref _nextId);
+              return contact;
+          },
+          (_, existing) =>
+          {
+              // Preserve the id assigned on first insert; update the mutable fields.
+              contact.ContactId = existing.ContactId;
+              return contact;
+          });
 
-    return (stored, wasCreated);
-  }
+        return (stored, wasCreated);
+    }
 
-  public Contact? FindByExternalId(string externalId)
-    => _byExternalId.GetValueOrDefault(externalId);
+    public Contact? FindByExternalId(string externalId)
+      => _byExternalId.GetValueOrDefault(externalId);
 
-  public Contact? FindByEmail(string email)
-    => _byExternalId.Values.FirstOrDefault(c =>
-      string.Equals(c.Email, email, StringComparison.OrdinalIgnoreCase));
+    public Contact? FindByEmail(string email)
+      => _byExternalId.Values.FirstOrDefault(c =>
+        string.Equals(c.Email, email, StringComparison.OrdinalIgnoreCase));
 }

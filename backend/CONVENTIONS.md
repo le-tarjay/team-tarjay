@@ -13,8 +13,9 @@ orchestration ("import flows", "activities", idempotent upserts) — **that
 framing is not real**. No Temporal package, worker, or docker-compose exists
 in this repo. Treat `Tarjay.Team.Domain/Contact/*` as disposable sample code,
 not precedent, until it's replaced. Its low-level *syntax* (file-scoped
-namespaces, 2-space indent, XML doc comments) does reflect the real house
-style below.
+namespaces, XML doc comments) does reflect the real house style below —
+except its indentation and its `= null!;` properties, both called out as
+gaps in Code style.
 
 Persistence and auth are intentionally undecided (see House opinions) —
 don't invent a database or identity provider when generating code; ask or
@@ -34,8 +35,89 @@ stub it behind an interface.
   build. `CA2007` (`ConfigureAwait`) is globally suppressed — this is a
   server app with no `SynchronizationContext` to deadlock on, so don't add
   `ConfigureAwait(false)` calls.
+- `EnforceCodeStyleInBuild=true` is what makes `IDExxxx` code-*style* rules
+  (as opposed to `CAxxxx` code-*quality* rules) run at build time instead of
+  only as IDE suggestions — but there's no backend `.editorconfig` yet, so
+  every `IDExxxx`/`CAxxxx` rule is running at whatever severity the SDK
+  ships by default, none of it tuned to this document. `AnalysisLevel=latest`
+  with no `AnalysisMode` set means the implicit mode is `Default` (a modest
+  subset of rules) — bumping to `Recommended` or `All` is available later if
+  stricter enforcement is wanted, but isn't set today. See Code style for
+  the concrete rules a `.editorconfig` should eventually encode.
 - These settings live in [`Directory.Build.props`](Directory.Build.props) at
   the backend root and apply to every project — don't override them per-project.
+
+## Code style
+
+Sourced from the [.NET coding conventions](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions),
+the [.NET runtime C# coding style](https://github.com/dotnet/runtime/blob/main/docs/coding-guidelines/coding-style.md)
+(the stricter, production-grade sibling the docs conventions are adopted
+from), and the [code analysis overview](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/overview),
+reconciled against what's actually in this repo:
+
+- **Indentation is 4 spaces, no tabs.** This is a deliberate change from
+  what's on disk today — every existing `.cs` file uses 2-space indent, and
+  there is no backend `.editorconfig` pinning either width. 4-space is now
+  canonical; don't hand-fix existing files' indentation piecemeal — reformat
+  a file with `dotnet format` (or your editor's formatter) when you're
+  already touching it, and prefer adding a real `.editorconfig` (see below)
+  over relying on convention alone.
+- **Allman braces** (opening brace on its own line) — already followed with
+  zero exceptions in this repo; keep it.
+- One statement and one declaration per line; no single-line `if` without
+  braces — already followed (`InMemoryContactStore.cs`,
+  `WeatherForecastController.cs`); keep it.
+- **Naming**:
+  - Private/internal instance fields: `_camelCase` — matches
+    `InMemoryContactStore`'s `_byExternalId` and `_nextId` today.
+  - Static fields: `s_camelCase`; thread-static: `t_camelCase` (no example
+    in real code yet — `WeatherForecastController`'s unprefixed `Summaries`
+    static field is template code, not the pattern to copy).
+  - Public types, methods, and properties: `PascalCase`.
+  - Primary constructor parameters: `camelCase`, no underscore
+    (`ILogger<FooController> logger`, not `_logger`) — assign to a
+    `_`-prefixed field only if the constructor body does more than trivial
+    assignment.
+- **Explicit visibility, modifier order**: always state `public`/`private`/
+  `internal` explicitly, with the accessibility keyword first
+  (`private static readonly`, not `static private readonly`) — already
+  followed everywhere.
+- **Seal or make static what isn't meant to be derived from**:
+  `InMemoryContactStore` (`public sealed class`) and
+  `ServiceCollectionExtensions` (`internal static class`) both already do
+  this — keep doing it for any new internal/private type unless it's
+  explicitly designed as a base class.
+- **No `this.` qualifier** unless required to disambiguate — zero exceptions
+  today, keep it that way.
+- **`var`** only when the type is obvious from the right-hand side itself
+  (a `new`, an explicit cast, or a literal) — not because a method name
+  hints at it. Use the explicit type otherwise.
+- Prefer `required` properties over `= null!` null-forgiving suppression for
+  properties that must be set before use.
+  `Tarjay.Team.Domain/Contact/Contact.cs`'s `ExternalId`, `FirstName`, etc.
+  use `= null!;` today — that's the pattern to move away from, not copy,
+  the next time a type like this is real.
+- Prefer collection expressions (`string[] vowels = ["a", "e"];`) over
+  `new[] { "a", "e" }`, and object initializers over property-by-property
+  assignment, for any code targeting the current C#/`net10` version.
+- **Comments**: single-line `//` only, never `/* */` blocks; on their own
+  line above the code, not trailing it; start with a capital letter, end
+  with a period, one space after `//`. `InMemoryContactStore.cs`'s
+  `// Preserve the id assigned on first insert; update the mutable fields.`
+  is the one real example in the codebase and already matches this exactly.
+- `using` directive ordering (`System.*` → `Microsoft.*` → project
+  namespaces, alphabetical within each group, outside the namespace
+  declaration) is covered in Runtime & framework — this is the same rule,
+  restated here because it's also an explicit style-guide recommendation,
+  not just an observed pattern.
+- **Add a backend `.editorconfig`.** None exists today (the root-level one
+  belonged to the now-removed frontend/Angular tooling), so nothing above
+  is actually enforced — it's convention only. A `.editorconfig` with
+  `indent_size = 4` for `*.cs` plus the `dotnet_diagnostic.IDExxxx.severity`
+  / `dotnet_naming_rule.*` entries for the naming rules above (the
+  [dotnet/docs `.editorconfig`](https://github.com/dotnet/docs/blob/main/.editorconfig)
+  is a reasonable starting point to adapt) is what would make this section
+  self-enforcing instead of aspirational.
 
 ## Project structure
 
@@ -193,8 +275,9 @@ Until it's added:
   `[Authorize]` attributes or assume a bearer token is present until real
   auth is configured end-to-end (Program.cs, appsettings, and a real
   identity provider).
-- **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, 2-space
-  indentation, XML doc comments (`<summary>`) on public types and members in
-  `Domain` that aren't self-explanatory from their name.
+- **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, XML
+  doc comments (`<summary>`) on public types and members in `Domain` that
+  aren't self-explanatory from their name. See Code style for indentation,
+  naming, and comment formatting specifics.
 - Keep the solution flat until a layer earns its keep — don't pre-create
   `Application`/`Infrastructure` folders with nothing in them "for later."

@@ -6,18 +6,18 @@ namespace Tarjay.Team.Api;
 
 public class Program
 {
-  public static void Main(string[] args)
-  {
-    var builder = WebApplication.CreateBuilder(args);
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddContactStore();
-    builder.Services.AddControllers();
-    var app = builder.Build();
+        builder.Services.AddContactStore();
+        builder.Services.AddControllers();
+        var app = builder.Build();
 
-    app.UseHttpsRedirection();
+        app.UseHttpsRedirection();
 
-    app.MapControllers();
+        app.MapControllers();
 
-    app.Run();
-  }
+        app.Run();
+    }
 }
