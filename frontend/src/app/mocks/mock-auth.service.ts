@@ -21,10 +21,14 @@ export class MockAuthService implements IAuthService {
       return throwError(() => new Error('Invalid employee ID or PIN.'));
     }
 
+    // Single hardcoded identity, kept minimal to satisfy the new Employee shape.
+    // Multi-tier mock resolution (covering all four roles) is Story 2's job.
     const employee: Employee = {
       id: 'cashier',
       name: 'Alex Rivera',
-      role: 'cashier',
+      tier: 'associate',
+      department: 'grocery',
+      function: 'cashier',
     };
 
     this.employee.set(employee);
