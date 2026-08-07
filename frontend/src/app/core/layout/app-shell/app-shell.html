@@ -40,9 +40,16 @@
 
   <div class="d-flex align-items-center gap-3">
     @if (currentEmployee(); as employee) {
-      <span class="navbar-text small">
-        Signed in as <strong>{{ employee.name }}</strong>
-      </span>
+      <div class="d-flex align-items-center gap-2 identity-block">
+        <span class="avatar-initials rounded-circle d-inline-flex align-items-center justify-content-center">
+          {{ initials() }}
+        </span>
+
+        <span class="d-flex flex-column">
+          <strong class="employee-name">{{ employee.name }}</strong>
+          <span class="department-role small">{{ departmentRoleText() }}</span>
+        </span>
+      </div>
     }
 
     <button
