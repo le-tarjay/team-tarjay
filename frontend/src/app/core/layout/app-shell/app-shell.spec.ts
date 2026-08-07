@@ -120,4 +120,73 @@ describe('AppShellComponent', () => {
 
     expect(fixture.nativeElement.querySelector('.identity-block')).toBeNull();
   });
+
+  // Nav-bar generation from the tier × department × function permission
+  // model (LET-68). Each case below exercises a different seeded tier via
+  // MockAuthService, so the coverage exercises the real permission model
+  // (NavPermissionService) rather than a stubbed visible set.
+  describe('nav-bar generation from the permission model', () => {
+    function navLinkTexts(): string[] {
+      const links: NodeListOf<Element> = fixture.nativeElement.querySelectorAll('.navbar-nav .nav-link');
+      return Array.from(links).map((el) => el.textContent!.trim());
+    }
+
+    it('renders no destination nav links (but brand + logout remain) when currentEmployee() is null', () => {
+      expect(navLinkTexts()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('.navbar-brand')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('button.btn-outline-light')).not.toBeNull();
+    });
+
+    it("renders exactly a Store Manager's visible set (all five destinations)", async () => {
+      await firstValueFrom(authService.login({ employeeId: 'storemgr', pin: '3333' }));
+      fixture.detectChanges();
+
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
+    });
+
+    it("renders exactly a Department Manager's visible set (all five destinations)", async () => {
+      await firstValueFrom(authService.login({ employeeId: 'deptmgr', pin: '2222' }));
+      fixture.detectChanges();
+
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
+    });
+
+    it("renders exactly a Cashier Associate's visible set, including Buyers", async () => {
+      await firstValueFrom(authService.login({ employeeId: 'cashier', pin: '1234' }));
+      fixture.detectChanges();
+
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
+    });
+
+    it('does not render a link for a destination the employee\'s tier lacks, even though it exists in the static route table', async () => {
+      await firstValueFrom(authService.login({ employeeId: 'associate', pin: '1111' }));
+      fixture.detectChanges();
+
+      // Non-Cashier Associate: /buyers exists in app.routes.ts but is not in
+      // this employee's visible set, so it must not render as a nav link.
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Payment']);
+      expect(navLinkTexts()).not.toContain('Buyers');
+    });
+
+    it('renders zero destination links (brand + logout remain) for a Receiving Associate (empty visible set)', async () => {
+      await firstValueFrom(authService.login({ employeeId: 'receiving', pin: '4444' }));
+      fixture.detectChanges();
+
+      expect(navLinkTexts()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('.navbar-brand')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('button.btn-outline-light')).not.toBeNull();
+    });
+
+    it('re-renders the nav to match the newly signed-in employee when currentEmployee switches tiers', async () => {
+      await firstValueFrom(authService.login({ employeeId: 'associate', pin: '1111' }));
+      fixture.detectChanges();
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Payment']);
+
+      authService.logout();
+      await firstValueFrom(authService.login({ employeeId: 'storemgr', pin: '3333' }));
+      fixture.detectChanges();
+
+      expect(navLinkTexts()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
+    });
+  });
 });
