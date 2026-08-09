@@ -1,24 +1,27 @@
 # E2E Conventions
 
-> Architect-owned. This document is optional but load-bearing: the E2E
-> Specialist reads it and follows it (see
-> `intent-to-production/agents/specialist-e2e.md`, "Read the surface's
-> conventions spec, if one exists... it overrides your defaults"). What you
-> put here is what your generated e2e code will look like. Effort in,
-> quality out. Iterate it like code.
+> Architect-owned and required, not optional: a specialist dispatched into a
+> surface with no conventions spec stops and reports rather than proceeding
+> (see `intent-to-production/agents/specialist-e2e.md`'s "Read the surface's
+> conventions spec" instruction). What you put here is what your generated
+> e2e code will look like. Effort in, quality out. Iterate it like code.
 
 ## Status
 
 This is a brand-new surface — there is no prior `e2e/CONVENTIONS.md` to
-extend, and `tests/login/login.spec.ts` is the only spec that exists today.
-Treat it as the one worked example, not as a large body of precedent.
+extend. `tests/login/login.spec.ts` is the only spec that exists today, and
+it is real, worked precedent, not a placeholder — treat it as the one
+worked example, not as a large body of precedent to generalize from.
 
 **Scope, stated explicitly:** the frontend runs entirely on its own
 `Mock*Service` implementations today — there is no real backend wired up
 (`backend/CONVENTIONS.md`: auth isn't configured server-side; persistence is
 undecided). Every flow this suite tests goes through those mocks. What
 happens to this suite once a real backend lands is **deliberately left
-open** — not this document's decision, and not something to guess at now.
+open** — not this document's decision. Meanwhile: do not wire real-backend
+flows into this suite on your own initiative, even once real auth/persistence
+exist. That is a scope decision for the architect to make explicitly when it
+comes up, not something to infer from a backend PR merging.
 
 ## Orientation
 
@@ -108,6 +111,40 @@ as e2e's own constants. Even where these values match
 reasons should not silently break an e2e spec, and a change to e2e's own
 test data should be a deliberate edit in `fixtures/`, not a side effect of
 someone else's change elsewhere.
+
+## Test levels
+
+**This surface runs exactly one level: flow tests through a real browser.**
+No unit tests and no integration tests live in `e2e/`.
+
+**What "flow test" means here:** a full user journey through the running
+Angular app in a real Chromium browser — navigate, interact via accessible
+locators, assert on visible text and URL. Not a component test (no
+`TestBed`, no mounting in isolation) and not an API test (nothing calls the
+backend directly, since there is no real backend yet — see Status).
+
+**How it's invoked:** `npm test` runs the whole suite headless. `npm run
+test:smoke` runs only `@smoke`-tagged tests (see Tagging, below) for a
+faster subset. `npm run test:ui` / `test:headed` / `test:debug` are
+interactive variants for local development, not CI. See CI, below, for how
+this runs in GitHub Actions.
+
+**What this surface deliberately does not test, because something else
+covers it:** component- and service-level behavior (signal logic, form
+validation, individual component rendering) is the frontend's own Vitest
+suite's job — see `frontend/CONVENTIONS.md`'s Testing style section. This
+surface does not duplicate that coverage; it only tests behavior visible
+across a full navigated flow.
+
+**What this surface owes / depends on:** nothing tests `e2e/` from above —
+it is the top of this repo's test pyramid today, so "what does this surface
+owe the surfaces that test it" doesn't apply to this document. The real
+dependency runs the other way: this suite's selector strategy (see above)
+depends on the frontend maintaining accessible markup — a real `<label
+for>` association and a real button role for every interactive element it
+locates by. `frontend/CONVENTIONS.md`'s own Test levels section now states
+this as a hard requirement on its side — this document doesn't restate it,
+just names the dependency.
 
 ## Tagging
 

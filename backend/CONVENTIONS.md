@@ -1,8 +1,9 @@
 # Backend Conventions
 
-> Architect-owned. This document is optional but load-bearing: the Backend
-> Specialist reads it and follows it. What you put here is what your generated
-> backend code will look like. Effort in, quality out. Iterate it like code.
+> Architect-owned and required, not optional: a specialist dispatched into a
+> surface with no conventions spec stops and reports rather than proceeding.
+> What you put here is what your generated backend code will look like.
+> Effort in, quality out. Iterate it like code.
 
 ## Status
 
@@ -231,8 +232,14 @@ Until it's added:
 - Return ASP.NET Core's built-in `ProblemDetails` shape for error responses,
   not a custom envelope.
 
-## Testing style
+## Test levels
 
+**This surface runs two levels: unit and integration.** No flow/E2E tests
+live in `backend/` — that's the `e2e` surface's job, and today the `e2e`
+suite doesn't call this API at all, since the frontend it drives is fully
+mocked (see `../frontend/CONVENTIONS.md`'s Status and `../e2e/CONVENTIONS.md`).
+
+**What each level means here:**
 - **Framework**: xUnit everywhere. Domain/unit-test projects add
   `<Using Include="Xunit"/>` as a global using — don't repeat
   `using Xunit;` per file in those projects.
@@ -257,6 +264,24 @@ Until it's added:
   code specifically; don't carry that `NoWarn` list into `src` projects.
 - No coverage threshold is enforced yet (`coverlet.collector` is wired but
   nothing gates on it) — write tests for behavior, not to hit a number.
+
+**How each is invoked:** `dotnet test` runs the whole solution (both
+levels together — there's no single flag that separates them). To run one
+level alone: `dotnet test tests/Tarjay.Team.Domain.UnitTests` for unit only,
+`dotnet test tests/Tarjay.Team.Api.IntegrationTests` for integration only.
+`dotnet test --filter "FullyQualifiedName~ContactStore"` runs a single test
+class within either project.
+
+**What this surface deliberately does not test:** no flow or multi-screen
+user journeys here, regardless of level — that's the `e2e` surface's job
+if and when it starts exercising a real backend.
+
+**What this surface owes the surfaces that test it: nothing yet.** No real
+consumer exists today — the frontend runs entirely on `Mock*Service`
+implementations and never calls this API, and no integration or e2e suite
+calls it either. There is nothing to commit to here until a real consumer
+exists. This is a stated omission, not an oversight — revisit this section
+once something actually depends on this API's shape.
 
 ## House opinions
 

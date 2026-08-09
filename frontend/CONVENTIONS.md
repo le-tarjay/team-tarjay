@@ -1,8 +1,9 @@
 # Frontend Conventions
 
-> Architect-owned. This document is optional but load-bearing: the Frontend
-> Specialist reads it and follows it. What you put here is what your generated
-> frontend code will look like. Effort in, quality out. Iterate it like code.
+> Architect-owned and required, not optional: a specialist dispatched into a
+> surface with no conventions spec stops and reports rather than proceeding.
+> What you put here is what your generated frontend code will look like.
+> Effort in, quality out. Iterate it like code.
 
 ## Status
 
@@ -246,8 +247,13 @@ but distinct rules for what `errorMessage` actually shows:
   don't leave the default unless "No records found." is actually correct
   for that list.
 
-## Testing style
+## Test levels
 
+**This surface runs one level: unit tests.** No integration or flow/E2E
+tests live in `frontend/` — flow coverage across a full navigated journey
+is the `e2e` surface's job (see `../e2e/CONVENTIONS.md`).
+
+**What "unit test" means here:**
 - **Framework**: Vitest via Angular's built-in test runner
   (`TestBed` + `ComponentFixture`, same API as the old Karma setup). Always
   include `provideZonelessChangeDetection()` in `TestBed.configureTestingModule`
@@ -263,14 +269,34 @@ but distinct rules for what `errorMessage` actually shows:
   `providers`, exactly like `app.config.ts` does for the real app — see
   [`login.spec.ts`](src/app/features/login/login.spec.ts). Don't hand-roll a
   separate test double when a `Mock*Service` already exists.
-- **Gap to close, not a pattern to copy**: most specs today only assert
-  `expect(component).toBeTruthy()` / `expect(service).toBeTruthy()` — that's
-  a smoke test, not coverage. `SaleService` in particular has real,
-  pure logic (`addProduct`, `updateQuantity`, the `subtotal`/`tax`/`total`
-  computed chain) with no test beyond "should be created" — new tests
-  should assert actual behavior, not just construction. `buyers.ts`,
-  `products.ts`, `sales.ts`, and `DataTableComponent` have no spec file at
-  all today; new list views/shared components should ship with one.
+
+**How it's invoked:** `ng test` (or `npm test`) runs the whole suite.
+`ng test --include="**/sale.service.spec.ts"` runs a single spec file. There
+is only one level here, so there's no separate "run unit alone" command —
+this is it.
+
+**Gap to close, not a pattern to copy**: most specs today only assert
+`expect(component).toBeTruthy()` / `expect(service).toBeTruthy()` — that's
+a smoke test, not coverage. `SaleService` in particular has real,
+pure logic (`addProduct`, `updateQuantity`, the `subtotal`/`tax`/`total`
+computed chain) with no test beyond "should be created" — new tests
+should assert actual behavior, not just construction. `buyers.ts`,
+`products.ts`, `sales.ts`, and `DataTableComponent` have no spec file at
+all today; new list views/shared components should ship with one.
+
+**What this surface deliberately does not test:** no flow or multi-screen
+tests here — those live in the `e2e` surface. A component spec stops at
+the component boundary; it does not drive a real browser or assert on
+navigation across features.
+
+**What this surface owes the surfaces that test it:** the `e2e` suite
+locates every element by role and label (`getByRole`/`getByLabel`) — never
+CSS, never `data-testid`. Every interactive element must keep a real
+accessible name: a genuine `<label for>` association for form controls, a
+real button/link role for anything clickable. This is a hard requirement,
+not an accessibility nice-to-have — breaking it doesn't fail a frontend
+test, it makes an e2e spec flaky somewhere else, for a reason that traces
+back to a markup change here.
 
 ## House opinions
 
