@@ -6,3 +6,35 @@
   min-height: calc(100vh - 56px);
   background: #f5f6f8;
 }
+
+.identity-menu {
+  position: relative;
+}
+
+.identity-toggle:hover,
+.identity-toggle:focus {
+  color: #fff;
+}
+
+.identity-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #3d3d5c;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.identity-menu-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  min-width: 10rem;
+  z-index: 1000;
+}
