@@ -8,6 +8,15 @@ import { AppShellComponent } from './app-shell';
 import { AUTH_SERVICE } from '../../tokens';
 import { IAuthService } from '../../auth/auth.service';
 import { MockAuthService } from '../../../mocks/mock-auth.service';
+import { NavPermissionService } from '../../permissions/nav-permission.service';
+
+function navLinkLabels(fixture: ComponentFixture<AppShellComponent>): string[] {
+  const links = fixture.nativeElement.querySelectorAll(
+    '.navbar-nav a.nav-link',
+  ) as NodeListOf<HTMLAnchorElement>;
+
+  return Array.from(links).map((link) => link.textContent?.trim() ?? '');
+}
 
 describe('AppShellComponent', () => {
   let component: AppShellComponent;

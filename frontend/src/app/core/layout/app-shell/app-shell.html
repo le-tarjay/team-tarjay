@@ -4,38 +4,15 @@
   </a>
 
   <div class="navbar-nav me-auto">
-    <a
-      class="nav-link"
-      routerLink="/sale"
-      routerLinkActive="active"
-      [routerLinkActiveOptions]="{ exact: true }"
-    >
-      Sale
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/products"
-      routerLinkActive="active"
-    >
-      Products
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/sales"
-      routerLinkActive="active"
-    >
-      Sales
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/buyers"
-      routerLinkActive="active"
-    >
-      Buyers
-    </a>
+    @for (link of navLinks(); track link.destination) {
+      <a
+        class="nav-link"
+        [routerLink]="link.path"
+        routerLinkActive="active"
+      >
+        {{ link.label }}
+      </a>
+    }
   </div>
 
   <div class="d-flex align-items-center gap-3">
