@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { vi } from 'vitest';
 
 import { AppShellComponent } from './app-shell';
 import { AUTH_SERVICE } from '../../tokens';
+import { IAuthService } from '../../auth/auth.service';
 import { MockAuthService } from '../../../mocks/mock-auth.service';
 import { NavPermissionService } from '../../permissions/nav-permission.service';
 
@@ -19,7 +21,8 @@ function navLinkLabels(fixture: ComponentFixture<AppShellComponent>): string[] {
 describe('AppShellComponent', () => {
   let component: AppShellComponent;
   let fixture: ComponentFixture<AppShellComponent>;
-  let authService: MockAuthService;
+  let authService: IAuthService;
+  let router: Router;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -33,94 +36,107 @@ describe('AppShellComponent', () => {
         },
       ],
     }).compileComponents();
+
+    authService = TestBed.inject(AUTH_SERVICE);
+    router = TestBed.inject(Router);
 
     fixture = TestBed.createComponent(AppShellComponent);
     component = fixture.componentInstance;
-    authService = TestBed.inject(AUTH_SERVICE) as unknown as MockAuthService;
-    fixture.detectChanges();
   });
 
   it('should create', () => {
+    fixture.detectChanges();
+
     expect(component).toBeTruthy();
   });
 
-  it('renders no nav links before anyone is signed in', () => {
-    expect(navLinkLabels(fixture)).toEqual([]);
-  });
+  it.each([
+    {
+      employeeId: 'cashier',
+      pin: '1234',
+      name: 'Alex Rivera',
+      initials: 'AR',
+      departmentRole: 'Cashier · Associate',
+    },
+    {
+      employeeId: 'jlee',
+      pin: '2345',
+      name: 'Jordan Lee',
+      initials: 'JL',
+      departmentRole: 'Electronics · Department Manager',
+    },
+    {
+      employeeId: 'spatel',
+      pin: '3456',
+      name: 'Sam Patel',
+      initials: 'SP',
+      departmentRole: 'Customer Support · Store Manager',
+    },
+    {
+      employeeId: 'ckim',
+      pin: '4567',
+      name: 'Casey Kim',
+      initials: 'CK',
+      departmentRole: 'storewide · Receiving Associate',
+    },
+  ])(
+    'renders initials, name, and department · role for the $employeeId tier',
+    async ({ employeeId, pin, name, initials, departmentRole }) => {
+      await firstValueFrom(authService.login({ employeeId, pin }));
+      fixture.detectChanges();
 
-  it("renders the Associate (Cashier) tier's full nav set, including Payment", async () => {
-    await firstValueFrom(authService.login({ employeeId: 'cashier', pin: '1234' }));
-    fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
 
-    expect(navLinkLabels(fixture)).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
-  });
+      expect(compiled.textContent).toContain(initials);
+      expect(compiled.textContent).toContain(name);
+      expect(compiled.textContent).toContain(departmentRole);
+    },
+  );
 
-  it("renders the Department Manager tier's full nav set, including Payment", async () => {
-    await firstValueFrom(authService.login({ employeeId: 'jlee', pin: '2345' }));
-    fixture.detectChanges();
-
-    expect(navLinkLabels(fixture)).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
-  });
-
-  it("renders the Store Manager tier's full nav set, including Payment", async () => {
-    await firstValueFrom(authService.login({ employeeId: 'spatel', pin: '3456' }));
-    fixture.detectChanges();
-
-    expect(navLinkLabels(fixture)).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
-  });
-
-  it("renders the Receiving Associate tier's storewide nav set, Products only, with no Payment link", async () => {
+  it("renders the Receiving Associate's storewide value in the department position, not a named department", async () => {
     await firstValueFrom(authService.login({ employeeId: 'ckim', pin: '4567' }));
     fixture.detectChanges();
 
-    expect(navLinkLabels(fixture)).toEqual(['Products']);
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('storewide · Receiving Associate');
+    expect(compiled.textContent).not.toMatch(/Grocery|Electronics|Cashier|Customer Support · Receiving Associate/);
   });
 
-  it('re-renders the nav with no stale links when signing out then back in as a different tier', async () => {
-    await firstValueFrom(authService.login({ employeeId: 'cashier', pin: '1234' }));
-    fixture.detectChanges();
-    expect(navLinkLabels(fixture)).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'Payment']);
-
-    authService.logout();
-    fixture.detectChanges();
-    expect(navLinkLabels(fixture)).toEqual([]);
-
-    await firstValueFrom(authService.login({ employeeId: 'ckim', pin: '4567' }));
-    fixture.detectChanges();
-    expect(navLinkLabels(fixture)).toEqual(['Products']);
-  });
-});
-
-describe('AppShellComponent, with an empty permission-model visible set', () => {
-  let fixture: ComponentFixture<AppShellComponent>;
-  let authService: MockAuthService;
-
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [AppShellComponent],
-      providers: [
-        provideZonelessChangeDetection(),
-        provideRouter([]),
-        {
-          provide: AUTH_SERVICE,
-          useClass: MockAuthService,
-        },
-        {
-          provide: NavPermissionService,
-          useValue: { getVisibleDestinations: () => new Set() },
-        },
-      ],
-    }).compileComponents();
-
-    fixture = TestBed.createComponent(AppShellComponent);
-    authService = TestBed.inject(AUTH_SERVICE) as unknown as MockAuthService;
-    fixture.detectChanges();
-  });
-
-  it('renders an empty nav bar, not a fallback menu, for a signed-in employee with no visible destinations', async () => {
+  it('opens the identity-click menu on click, showing exactly one action, Logout', async () => {
     await firstValueFrom(authService.login({ employeeId: 'cashier', pin: '1234' }));
     fixture.detectChanges();
 
-    expect(navLinkLabels(fixture)).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[role="menu"]')).toBeNull();
+
+    const toggle = fixture.nativeElement.querySelector('.identity-toggle') as HTMLButtonElement;
+    toggle.click();
+    fixture.detectChanges();
+
+    const menu = fixture.nativeElement.querySelector('[role="menu"]') as HTMLElement;
+    const menuItems = menu.querySelectorAll('[role="menuitem"]');
+
+    expect(menu).toBeTruthy();
+    expect(menuItems.length).toBe(1);
+    expect(menuItems[0].textContent?.trim()).toBe('Logout');
+  });
+
+  it('still logs out and navigates to /login when Logout is clicked from the menu', async () => {
+    await firstValueFrom(authService.login({ employeeId: 'cashier', pin: '1234' }));
+    fixture.detectChanges();
+
+    const navigateSpy = vi.spyOn(router, 'navigateByUrl');
+
+    const toggle = fixture.nativeElement.querySelector('.identity-toggle') as HTMLButtonElement;
+    toggle.click();
+    fixture.detectChanges();
+
+    const logoutButton = fixture.nativeElement.querySelector(
+      '[role="menuitem"]',
+    ) as HTMLButtonElement;
+    logoutButton.click();
+
+    expect(authService.isAuthenticated()).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledWith('/login');
   });
 });

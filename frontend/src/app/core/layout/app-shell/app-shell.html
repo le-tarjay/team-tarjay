@@ -17,18 +17,36 @@
 
   <div class="d-flex align-items-center gap-3">
     @if (currentEmployee(); as employee) {
-      <span class="navbar-text small">
-        Signed in as <strong>{{ employee.name }}</strong>
-      </span>
-    }
+      <div class="identity-menu">
+        <button
+          type="button"
+          class="btn btn-link p-0 border-0 text-decoration-none text-white d-flex align-items-center gap-2 identity-toggle"
+          (click)="toggleIdentityMenu()"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="menuOpen()"
+          [attr.aria-label]="'Account menu for ' + employee.name"
+        >
+          <span class="identity-avatar" aria-hidden="true">{{ initials() }}</span>
+          <span class="d-flex flex-column align-items-start lh-sm">
+            <strong>{{ employee.name }}</strong>
+            <small class="text-white-50">{{ departmentRole() }}</small>
+          </span>
+        </button>
 
-    <button
-      type="button"
-      class="btn btn-outline-light btn-sm"
-      (click)="logout()"
-    >
-      Logout
-    </button>
+        @if (menuOpen()) {
+          <div class="dropdown-menu show identity-menu-panel" role="menu">
+            <button
+              type="button"
+              class="dropdown-item"
+              role="menuitem"
+              (click)="logout()"
+            >
+              Logout
+            </button>
+          </div>
+        }
+      </div>
+    }
   </div>
 </nav>
 
