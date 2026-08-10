@@ -24,7 +24,8 @@ export class MockAuthService implements IAuthService {
     const employee: Employee = {
       id: 'cashier',
       name: 'Alex Rivera',
-      role: 'cashier',
+      tier: 'Associate',
+      department: 'Cashier',
     };
 
     this.employee.set(employee);
