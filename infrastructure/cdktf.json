@@ -1,0 +1,26 @@
+{
+  "language": "python",
+  "app": "poetry run python main.py",
+  "output": "cdktf.out",
+  "sendCrashReports": false,
+  "terraformProviders": [],
+  "terraformModules": [],
+  "targetVersions": {
+    "terraform": ">=1.10.0",
+    "opentofu": ">=1.10.0"
+  },
+  "context": {
+    "aws": {
+      "region": "REPLACE_ME",
+      "account-number": "REPLACE_ME",
+      "profile": "REPLACE_ME"
+    },
+    "state-bucket-name": "REPLACE_ME",
+    "global-tags": {
+      "terraform": "true",
+      "project": "team-tarjay"
+    },
+    "vpc-cidr-block": "10.20.0.0/22"
+  },
+  "projectId": "4392d12d-caf7-4b1f-91a2-d7729c7cd77a"
+}

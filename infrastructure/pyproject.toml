@@ -1,0 +1,58 @@
+[project]
+name = "infrastructure"
+version = "0.1.0"
+description = "CDK Terrain (CDKTN) definition of the AWS infrastructure hosting Team Targét."
+authors = [
+    {name = "Kisasa"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "cdktn (>=0.24.0,<0.25.0)",
+    "cdktn-provider-aws (>=25.2.0,<26.0.0)",
+    "constructs (>=10.6.0,<10.8.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1.1"
+ruff = "^0.16.4"
+mypy = "^2.3.1"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["cdktf.out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+exclude = ["cdktf.out"]
+
+# jsii-generated base classes (TerraformStack, Construct, ...) resolve to
+# `Any` once the overrides below skip following their imports, and strict
+# mode's `disallow_subclassing_any` would otherwise flag every stack and
+# every construct in this project -- the two things this codebase is mostly
+# made of. Every other strict check still applies.
+disallow_subclassing_any = false
+
+# These are jsii-generated bindings: real .py source, not thin stubs, so
+# mypy's default `follow_imports = normal` walks thousands of generated
+# resource classes on every run. `skip` uses each package's own declared
+# types at the boundary without re-checking its internals -- the difference
+# between `mypy .` finishing in seconds and not finishing.
+[[tool.mypy.overrides]]
+module = ["cdktn.*", "cdktn_provider_aws.*", "jsii.*", "constructs.*", "publication.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
