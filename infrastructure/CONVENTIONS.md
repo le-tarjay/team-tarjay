@@ -6,9 +6,18 @@ Targét's AWS infrastructure. Read this before writing any code here.
 ## Status
 
 This surface is greenfield. There is no prior infrastructure code in this repository to
-treat as precedent, and no ADRs yet. The design is deliberately borrowed from Kisasa's
+treat as precedent. The design is deliberately borrowed from Kisasa's
 `intent-to-production/infrastructure` (the same framework, in TypeScript) — that project's
 patterns are real precedent to follow, not an accident of what happened to exist.
+
+ADRs now exist in `docs/architecture/` (`ADR-backend-system-design.md`,
+`ADR-frontend-system-design.md`) — read them for context. One is directly
+relevant to this surface: `ADR-backend-system-design.md` §7 ("Local
+Deployment Topology — Deliberately Abstracted") originally left physical/
+hardware deployment shape, and whether the local backend is one unified
+service or several, both undecided on purpose. The architect has since
+settled part of this outside the ADR itself — see Deliberately the
+specialist's call, below, for what's decided and what's still open.
 
 ## Orientation
 
@@ -76,6 +85,26 @@ resources.
   package is.
 - Poetry manages dependencies. `poetry.lock` is committed — every install should be
   reproducible from it.
+- **Known future needs, not yet resolved:**
+  - `backend/CONVENTIONS.md` commits to a real external identity provider (Keycloak)
+    instead of faked auth. Nothing here stands one up yet — no stack, no provider, no
+    secrets for it.
+  - `frontend/CONVENTIONS.md` commits to hosting out of a private S3 bucket fronted by
+    CloudFront. Nothing here provisions that yet — no bucket, no distribution, no origin
+    access control.
+  - `backend/CONVENTIONS.md` commits to multiple independently-deployed services, each
+    pushing a versioned image to ECR. Nothing here provisions a registry or compute to
+    run those images yet, and the service boundaries themselves aren't decided either.
+  All three are flagged so they aren't discovered as surprises later; none are answered
+  here.
+
+## Cross-surface impact
+
+A change in `backend/` or `frontend/` can require a change here — a new secret, a new
+external dependency to stand up, a new deployment shape. Both surfaces' own
+`CONVENTIONS.md` now cross-reference this file directly for exactly this reason. Treat a
+"this needs infrastructure too" note found there as a real question to raise with the
+architect, not something to resolve unilaterally by picking a stack shape.
 
 ## Test levels
 
@@ -119,6 +148,17 @@ context block and one implied environment. When a second environment is genuinel
 whether that becomes a second context file, a second directory of stacks, or something
 else is not decided — a specialist facing that need should raise it as a question rather
 than picking a shape unilaterally.
+
+Physical deployment topology is partially decided, partially still open —
+this narrows `ADR-backend-system-design.md` §7's original silence, it
+doesn't close it. **Decided:** the backend is multiple independently
+deployed services, not one unified service, and each builds a versioned
+container image pushed to ECR (see `backend/CONVENTIONS.md`'s CI). **Still
+open:** what the actual service boundaries are, and what runs those images
+(ECS/Fargate, ECS/EC2, App Runner, EKS, or something else) — neither is
+decided yet. A specialist facing a decision that depends on either (e.g. how
+many stacks the backend needs, or a stack's compute target) should raise it
+as a question rather than inferring an answer.
 
 ## Never in this codebase
 

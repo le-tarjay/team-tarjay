@@ -13,15 +13,20 @@ extend. `tests/login/login.spec.ts` is the only spec that exists today, and
 it is real, worked precedent, not a placeholder — treat it as the one
 worked example, not as a large body of precedent to generalize from.
 
-**Scope, stated explicitly:** the frontend runs entirely on its own
-`Mock*Service` implementations today — there is no real backend wired up
-(`backend/CONVENTIONS.md`: auth isn't configured server-side; persistence is
-undecided). Every flow this suite tests goes through those mocks. What
-happens to this suite once a real backend lands is **deliberately left
-open** — not this document's decision. Meanwhile: do not wire real-backend
-flows into this suite on your own initiative, even once real auth/persistence
-exist. That is a scope decision for the architect to make explicitly when it
-comes up, not something to infer from a backend PR merging.
+**Scope, stated explicitly:** the frontend and this suite are both meant to
+be totally real, production-built — nothing rigged up on this side, ever.
+The backend is what's selectively faked, and only in what logic serves a
+response (an in-memory collection vs. a hardcoded response, per
+`../docs/architecture/demo-build-tiering.md`), never in whether an endpoint
+exists — every endpoint the frontend needs, exists. As of this writing the
+code still runs on `Mock*Service` for most features (see
+`../frontend/CONVENTIONS.md`'s Status) — that's a bootstrapping state, not
+the target one. **Once a feature's real backend endpoints are wired into the
+frontend, this suite's flows for that feature go through the real backend
+automatically** — there is no separate "wire e2e up to the real backend"
+step to wait for, and no gate to ask about. The only thing still genuinely
+open is *how* auth-dependent flows work once real auth lands — see Auth in
+tests, below.
 
 ## Orientation
 
@@ -101,6 +106,16 @@ Every test needing an authenticated page uses the shared
 login form. It is still a real UI login on every test that uses it — the
 fixture only removes the boilerplate from each spec, not the login itself.
 
+**This whole section describes today's bootstrapping state, not the target
+one.** Auth is moving to a real external identity provider (Keycloak,
+self-contained in local docker-compose — see
+`../backend/CONVENTIONS.md`'s House opinions), not staying mocked. Once
+that lands, everything above needs a real rewrite: what a real IdP's session
+looks like client-side, whether `storageState` reuse becomes viable, and
+whether `authenticatedPage` still drives a full UI login every test or can
+reuse a stored session. None of that is decided yet — this section stays as
+written until it is, rather than guessing at a shape now.
+
 ## Test data
 
 **e2e owns its own test data, decoupled from the frontend's mocks.**
@@ -160,11 +175,12 @@ later.
 `.github/workflows/e2e.yml` runs on every push to `main` and every pull
 request touching `e2e/**` or `frontend/**`: installs frontend and e2e
 dependencies, installs the Chromium browser, runs the suite, and uploads
-the HTML report as a build artifact. This is ahead of `frontend.yml` and
-`backend.yml`, which are still checkout-only stubs with no test execution
-wired up — that gap is real, not a reason to hold e2e back, since a
-specialist's own PR triggering a real CI run is the actual point either
-way.
+the HTML report as a build artifact. `frontend.yml` and `backend.yml` are
+still checkout-only stubs today, but both now have a decided direction to
+implement (test, then package/deploy — see each surface's own
+`CONVENTIONS.md` CI section) — that's a real, near-term gap to close, not a
+reason to hold e2e back, since a specialist's own PR triggering a real CI
+run is the actual point either way.
 
 ## Never in this codebase
 

@@ -7,21 +7,29 @@
 
 ## Status
 
-This is a real, fairly complete first pass at a concept — a frontend-only
-point-of-sale UI ("Le Targét") with no backend, built deliberately to
-production standards (see the project's own
-[README.md](README.md): "It is a production-minded Angular application that
-happens to not have a backend yet. The standards are the same either way.").
-Most of the codebase is consistent and worth treating as real precedent. Two
-known defects, not precedent:
+This is a real, fairly complete first pass at a concept — a point-of-sale
+UI ("Le Targét") built deliberately to production standards (see the
+project's own [README.md](README.md): "It is a production-minded Angular
+application that happens to not have a backend yet. The standards are the
+same either way.") — that README line is now the whole plan, not a hedge:
+frontend and e2e are meant to be totally real, nothing rigged up on this
+side, ever. The backend is what's selectively faked, and only in what logic
+serves a response, never in whether an endpoint exists — see
+`../backend/CONVENTIONS.md`'s House opinions and
+`../docs/architecture/demo-build-tiering.md`. Most of the codebase is
+consistent and worth treating as real precedent. Two known defects, not
+precedent:
 
 - `src/app/features/payment.component/` is a dead, empty stub (`PaymentComponent`
   with no body) — almost certainly an accidental `ng generate` leftover from
   before the real `src/app/features/payment/payment.ts` existed. It isn't
   routed anywhere and shouldn't be extended; it should be deleted.
 - The README describes `/docs/architecture` (ADRs) and `/docs/domain` (a
-  domain glossary) as existing. Neither directory exists in the repo yet —
-  treat those as aspirational, not a place to look for context today.
+  domain glossary). `/docs/architecture` is now real —
+  `ADR-backend-system-design.md`, `ADR-frontend-system-design.md`, and
+  `demo-build-tiering.md` all live there; read them for context.
+  `/docs/domain` still doesn't exist — that half of the README's claim stays
+  aspirational.
 
 Where older files disagree with newer ones (see Project structure), the
 newer pattern is called out as canonical below.
@@ -131,6 +139,15 @@ state patterns below for which pattern each gets.
      **token** (`inject(PRODUCT_SERVICE)`), never the concrete class — that's
      the seam that makes wiring up a real backend later a one-line change
      in `app.config.ts`, not a find-and-replace across features.
+     **This wiring in `app.config.ts` is temporary, not permanent, for any
+     given feature.** The moment that feature's backend endpoints are real
+     (per `../backend/CONVENTIONS.md`), swap `app.config.ts` to provide the
+     real service class for that token instead of the mock — for good, not
+     behind a flag. There is no demo/offline mode that keeps a mock wired
+     into a real running app; once swapped, the `Mock<Feature>Service` class
+     still exists in the repo, but only to be provided directly in that
+     feature's own spec files (see Test levels), never in `app.config.ts`
+     again.
   2. **Local UI/domain state** (`SaleService` is the only example today):
      plain `@Injectable({providedIn: 'root'})`, signals + computed, no
      interface, no token, no mock — because there's no backend call to
@@ -246,6 +263,16 @@ but distinct rules for what `errorMessage` actually shows:
   for "loaded successfully, zero rows" — pass a feature-specific message,
   don't leave the default unless "No records found." is actually correct
   for that list.
+- **Field-level validation errors** (from a `422`/`ValidationProblemDetails`
+  response — see `../backend/CONVENTIONS.md`'s API surface) are a distinct
+  case from `errorMessage` above, shown next to the specific field that
+  failed rather than folded into the single banner. A service method that
+  can receive this shape throws a distinct error type carrying the per-field
+  messages, not a plain `Error`, so the component can tell a validation
+  failure apart from any other failure and render each message where it
+  belongs. This is new machinery — no form in the codebase does this yet —
+  introduced specifically because the backend's validation responses are
+  structured per-field, not a single message.
 
 ## Test levels
 
@@ -297,6 +324,31 @@ real button/link role for anything clickable. This is a hard requirement,
 not an accessibility nice-to-have — breaking it doesn't fail a frontend
 test, it makes an e2e spec flaky somewhere else, for a reason that traces
 back to a markup change here.
+
+## Infrastructure impact
+
+Not every frontend change stays inside `frontend/` — some require a change
+in `infrastructure/` too:
+
+- **Any new secret or config value this surface needs at runtime** (an API
+  base URL, a public client ID for the real auth provider once that's wired
+  up, etc.) goes through the same discipline backend does —
+  `../infrastructure/CONVENTIONS.md`'s Configuration and secrets section is
+  the source of truth for how a value reaches a running surface. Don't
+  assume a build-time environment variable baked into the bundle is enough
+  on its own; raise it as a question.
+- **Hosting is decided: a private S3 bucket fronted by CloudFront** (see CI,
+  below). `../infrastructure/CONVENTIONS.md` doesn't have a stack for this
+  yet — that's an infra-side gap to raise, not something to route around by
+  assuming a different shape.
+
+## CI
+
+Tests run in CI (see Test levels), then the build is pushed to a private S3
+bucket fronted by CloudFront — that's the decided hosting shape for this
+app. `.github/workflows/frontend.yml` doesn't do this yet (checkout-only
+today) — this is the direction to implement, not a pattern to invent
+differently.
 
 ## House opinions
 

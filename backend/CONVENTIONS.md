@@ -18,9 +18,14 @@ namespaces, XML doc comments) does reflect the real house style below —
 except its indentation and its `= null!;` properties, both called out as
 gaps in Code style.
 
-Persistence and auth are intentionally undecided (see House opinions) —
-don't invent a database or identity provider when generating code; ask or
-stub it behind an interface.
+Persistence and auth are now decided, not open (see House opinions): there
+is no real database, ever — every endpoint's data comes from an in-memory
+collection or a hardcoded response, per the tier assigned to it in
+`docs/architecture/demo-build-tiering.md`. Auth is real, not tiered like
+data-serving logic — a real external identity provider (Keycloak),
+self-contained in local docker-compose, gates login end-to-end, per
+`docs/architecture/ADR-backend-system-design.md` §4 ("corporate is the sole
+identity/credential authority").
 
 ## Runtime & framework
 
@@ -158,6 +163,76 @@ treat that as the target shape once `Application`/API DTOs exist.
 Within `Domain`, organize by feature/aggregate (`Contact/`, not
 `Models/` + `Interfaces/` + `Exceptions/` split across the project root).
 
+## API surface
+
+- **Routes**: plural, kebab-case resource nouns, RESTful nesting for
+  parent/child relationships (`/employees/{id}`, `/held-sales/{id}`,
+  `/registers/{id}/till`). An action that doesn't fit CRUD-on-a-resource gets
+  an action-suffix path on the resource it acts on (`/held-sales/{id}/resume`,
+  `/tills/{id}/close`) rather than being forced into a resource+verb noun of
+  its own.
+- **Versioning**: URL-path versioning from day one — every route starts
+  `/v1/...` — even though the frontend is the only consumer today. Deliberate:
+  `docs/architecture/ADR-backend-system-design.md`'s corporate-sync concept
+  (§14.1–14.3) is a second, genuinely external consumer this API will
+  eventually need to support, and retrofitting versioning after that exists
+  is real, avoidable pain.
+- **Response envelope (success only)**: every successful response is
+  `{ "data": ..., "meta": {...} }` — `data` holds the resource or list,
+  `meta` holds pagination info (below) and anything else that isn't the
+  resource itself (e.g. a future sync timestamp). A single-resource `GET`
+  still gets the envelope even though it will never paginate — one
+  consistent shape for every success response, not a special case for lists.
+- **Pagination**: offset/limit (`?page=`, `?pageSize=`), with `meta` carrying
+  `page`, `pageSize`, `totalCount`. Chosen knowingly over a cursor-based
+  approach despite this domain having actively-mutating queues (held sales,
+  BOPIS fulfillment) where offset/limit can shift or repeat items across
+  pages — accepted, not an oversight.
+- **Validation**: FluentValidation, one validator per request DTO, registered
+  by assembly scan, run before the controller action executes. A validation
+  failure returns `422` with ASP.NET Core's own `ValidationProblemDetails`
+  shape — the standard framework shape, not a custom one.
+- **Error responses do not use the envelope.** A `ProblemDetails` (or
+  `ValidationProblemDetails`) response stands alone at the top level, exactly
+  as ASP.NET Core produces it (`application/problem+json`) — never wrapped in
+  `{ data, meta }`. Only success responses use the envelope; a consumer
+  branches on status code to know which shape to expect, not the other way
+  around.
+- **Status codes**: `404` for a missing resource, `422` for a validation or
+  mapped domain-rule failure (see Error handling), `500` only for the
+  fallback handler's genuinely unexpected case — never for anything a
+  per-aggregate exception handler can anticipate and map.
+
+## Logging and observability
+
+- **Levels**: `Information` for a completed request or action (login
+  succeeded, till closed, sale completed). `Warning` for a recoverable
+  failure — a failed PIN attempt, a validation rejection — something that
+  happened but didn't break anything. `Error` only for the fallback
+  exception handler's genuinely unexpected case (see Error handling) — never
+  for an ordinary, anticipated domain rejection like "not found."
+- **PINs and tokens never appear in a log line, at any level, including
+  inside an exception's message.** Stated explicitly for this domain, not a
+  generic aspiration — employee login and manager override both run on PINs
+  (see `docs/architecture/Team-Targét.dc.html`'s manager PIN override modal).
+- Structured logging only, via `ILogger<T>`, one per class — see Preferred
+  patterns, below, for the message-template convention.
+
+## Async and concurrency
+
+- **Atomic claims** (BOPIS claim-next-order, Held Sale resume — anywhere
+  multiple registers could race for the same in-memory record) use a plain
+  `lock` (`Monitor`) around the shared collection, not concurrent-collection
+  compare-and-swap primitives. These are compound check-then-act operations
+  (verify unclaimed, verify eligible, then claim, atomically) that a simple
+  mutual-exclusion lock expresses more directly than `ConcurrentDictionary`'s
+  atomic methods — and nothing awaited ever happens inside the lock, since
+  there's no real datastore or I/O to await.
+- Async policy otherwise follows Preferred patterns' Async I/O rule, below:
+  nothing does real I/O yet, so nothing is `async` yet either — the moment
+  something does (a real external call, e.g. to the auth provider), it goes
+  `async` all the way up the call stack, no blocking on `.Result`/`.Wait()`.
+
 ## Preferred patterns
 
 - **DI registration**: one `internal static class …ServiceCollectionExtensions`
@@ -211,26 +286,76 @@ project. If a helper is needed by more than one project, that's the signal
 to create one rather than copy-pasting; don't create it in advance of a
 second consumer.
 
+## Infrastructure impact
+
+Not every backend change stays inside `backend/` — some require a change in
+`infrastructure/` too, and it's easy to miss that dependency since the two
+surfaces build independently. Raise it as a question to the architect rather
+than assuming a shape, per `infrastructure/CONVENTIONS.md`'s own rules:
+
+- **Any new secret or config value this surface needs** doesn't just become
+  an environment variable read in `Program.cs` — per
+  `../infrastructure/CONVENTIONS.md`'s Configuration and secrets, a stack may
+  only ever hold an SSM parameter's ARN, never the value itself. A new
+  secret means a new SSM parameter needs to exist in `infrastructure/` before
+  this surface can read it at runtime.
+- **A new external dependency this surface talks to** — the real auth
+  provider decided in House opinions, above, is the concrete example today —
+  usually means new infrastructure to stand it up, network/security-group
+  access to it, and secrets for it, none of which exists yet for Keycloak.
+  This is exactly the kind of addition `../infrastructure/CONVENTIONS.md`'s
+  Composition and dependencies section already gates ("adding a new
+  Terraform provider or package is an architect decision, raise it as a
+  question") — don't assume infra will just pick this up on its own.
+- **This surface's own deployment shape** — how many services, what they run
+  on — is `docs/architecture/ADR-backend-system-design.md` §7's deliberately
+  unresolved question, restated in `../infrastructure/CONVENTIONS.md`'s
+  Deliberately the specialist's call. A change here that implies an answer
+  (e.g. splitting this API into two independently-deployed pieces) needs an
+  infra conversation, not a unilateral choice.
+
 ## Error handling
 
-No global exception handling exists yet (no `IExceptionHandler`, no
-`UseExceptionHandler`, no `ProblemDetails` middleware) — this is a real gap,
-not a deliberate choice, and should be treated as a TODO rather than copied.
-Until it's added:
+**Global exception handling is decided, not a TODO.** It uses ASP.NET Core's
+`IExceptionHandler` chain (`services.AddExceptionHandler<T>()` for each
+handler, `services.AddProblemDetails()`, `app.UseExceptionHandler()`) — not
+hand-rolled middleware. No handler exists in code yet; this is the shape to
+build when the first one is needed, not a pattern to invent differently.
 
-- Throw typed exceptions from `Domain` for domain-rule violations (e.g. "not
-  found", "already exists", "invalid state transition"). Give each a real
-  name and message — `Tarjay.Team.Domain/Contact/ContactExceptions.cs` is an
-  empty stub today; don't replicate that. A domain exception type should be
-  named for what went wrong (`ContactNotFoundException`, not a generic
-  catch-all), and should derive from a common base per aggregate only once
-  there's more than one exception type in that aggregate.
-- Controllers translate known domain exceptions to the right HTTP status via
-  a `try`/`catch` or (once introduced) a shared `IExceptionHandler` — don't
-  let a domain exception surface as an unhandled 500 if it maps cleanly to a
-  4xx.
-- Return ASP.NET Core's built-in `ProblemDetails` shape for error responses,
-  not a custom envelope.
+**Domain exceptions and HTTP concerns are two separate things — don't
+conflate them.** Throw typed exceptions from `Domain` for domain-rule
+violations (e.g. "not found", "already exists", "invalid state transition").
+Give each a real name and message — `Tarjay.Team.Domain/Contact/ContactExceptions.cs`
+is an empty stub today; don't replicate that. A domain exception type is
+named for what went wrong (`ContactNotFoundException`, not a generic
+catch-all), and derives from a common base per aggregate once there's more
+than one exception type in that aggregate. **A domain exception never
+carries an HTTP status code or anything else framework-specific** — that
+would put an ASP.NET concern inside `Domain`, which has zero framework
+references by design (see Project structure). The HTTP status a given
+domain exception maps to is decided entirely on the handler side.
+
+**One `IExceptionHandler` per aggregate.** `ContactExceptionHandler` (and one
+per future aggregate, added when that aggregate gets its own real exception
+types) catches only its own aggregate's domain exception types and maps each
+to the HTTP status it deserves, returning ASP.NET Core's `ProblemDetails`
+shape populated with real, specific detail about what happened — not a
+generic message. Don't build one shared handler that switches across every
+aggregate's exception types in one place; a new aggregate gets a new handler
+class, not a new case in an existing one.
+
+**A final fallback handler catches everything else — anything that isn't a
+recognized domain exception.** That's the genuinely unexpected case: the
+request never completed its normal contract. It:
+- Returns a bare status code (`500`) with **no payload at all** — no
+  `ProblemDetails`, nothing. The absence of a payload is itself the signal to
+  the consumer that this wasn't a handled domain failure; a handled failure
+  always has a `ProblemDetails` body, so a body's total absence means
+  something broke before any domain logic could reason about it.
+- **Always logs the full exception — message and stack trace, at `Error`
+  level, via `ILogger<T>`, structured** — before returning. The client gets
+  nothing, but nothing is silently dropped; the failure still exists in the
+  logs. Logging here is not optional.
 
 ## Test levels
 
@@ -276,30 +401,51 @@ class within either project.
 user journeys here, regardless of level — that's the `e2e` surface's job
 if and when it starts exercising a real backend.
 
-**What this surface owes the surfaces that test it: nothing yet.** No real
-consumer exists today — the frontend runs entirely on `Mock*Service`
-implementations and never calls this API, and no integration or e2e suite
-calls it either. There is nothing to commit to here until a real consumer
-exists. This is a stated omission, not an oversight — revisit this section
-once something actually depends on this API's shape.
+**What this surface owes the surfaces that test it: everything, going
+forward.** The frontend is meant to be fully real and production-built —
+see `../frontend/CONVENTIONS.md`'s Status — which means every endpoint the
+frontend needs must actually exist here, and `../e2e/CONVENTIONS.md`'s flows
+will run against these endpoints for real once the frontend is wired to
+them. As of this writing the frontend still runs on `Mock*Service` for most
+features, so this is a stated near-term gap, not a permanent one: a change
+to a response's shape will break the frontend and e2e, not just this
+surface's own tests, the moment a feature is wired up for real.
+
+## CI
+
+Tests run in CI (both levels — see Test levels), then each service builds a
+versioned container image and pushes it to ECR. `.github/workflows/backend.yml`
+doesn't do this yet (checkout-only today) — this is the decided direction to
+implement, not a pattern to invent differently. Two things this depends on
+are still open, not this document's decision: exactly what the service
+boundaries are, and what actually runs those images once pushed (see
+`../infrastructure/CONVENTIONS.md`'s Deliberately the specialist's call).
 
 ## House opinions
 
-- **Persistence is intentionally undecided.** Don't pick a database or ORM
-  when generating code. If a feature needs to persist something, define the
-  interface in `Domain` and provide an in-memory implementation (thread-safe,
-  singleton-registered, like `InMemoryContactStore`) until a real datastore
-  decision is made — that's a deliberate placeholder, not a shortcut to fix.
-  Whatever the eventual store, queries are always parameterized (EF Core
-  LINQ, or parameterized ADO.NET/Dapper) — never build SQL by string
-  concatenation or interpolation.
-- **Auth is not wired up.** `ApiWebApplicationFactory` configures JWT bearer
-  options for tests, but `Program.cs` has no `AddAuthentication`/
-  `AddJwtBearer` call and `appsettings.json` has no `Identity` section — this
-  is leftover scaffolding, not a real auth posture. Don't add
-  `[Authorize]` attributes or assume a bearer token is present until real
-  auth is configured end-to-end (Program.cs, appsettings, and a real
-  identity provider).
+- **Persistence is decided: there is no real database, ever.** Every
+  feature's data comes from an in-memory implementation (thread-safe,
+  singleton-registered, like `InMemoryContactStore`) — not as a placeholder
+  for a future real store, but as the permanent shape. Which specific
+  in-memory approach a given piece uses (a genuine in-memory collection
+  performing real computation, vs. a hardcoded/seeded response with no
+  computation behind it) is set per-piece in
+  `docs/architecture/demo-build-tiering.md` — that document, not this one, is
+  the source of truth for which tier a given feature is. Still define the
+  interface in `Domain` regardless of tier (`IContactStore`-style) — that
+  discipline doesn't change just because there's no real store to swap in
+  later.
+- **Auth is real, and is not on the tiering system data-serving logic uses.**
+  Unlike persistence, auth is not something this project fakes — login routes
+  through a real external identity provider (Keycloak), run as a
+  self-contained instance in local docker-compose. This matches
+  `docs/architecture/ADR-backend-system-design.md` §4's "corporate is the
+  sole identity/credential authority" — Keycloak plays that role locally.
+  Today, `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` call and
+  `appsettings.json` has no `Identity` section (`ApiWebApplicationFactory`'s
+  JWT bearer setup is test-only scaffolding) — don't add `[Authorize]` or
+  assume a bearer token is present until that's wired up for real. The
+  destination is decided; the wiring itself isn't done yet.
 - **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, XML
   doc comments (`<summary>`) on public types and members in `Domain` that
   aren't self-explanatory from their name. See Code style for indentation,

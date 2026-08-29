@@ -4,12 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-**Team Targét** ("Le Targét") is a point-of-sale application. The repository is a monorepo with two independent surfaces:
+**Team Targét** ("Le Targét") is a point-of-sale application built to
+showcase architecture patterns. The repository is a monorepo with four
+surfaces, each with its own `CONVENTIONS.md` — read that file before writing
+code in any of them:
 
-- `frontend/` — Angular 20 SPA (no backend required; all data flows through mock services today)
-- `backend/` — ASP.NET Core Web API (.NET 10, Clean Architecture)
+- `frontend/` — Angular 20 SPA. Meant to be totally real, production-built —
+  nothing rigged up here.
+- `backend/` — ASP.NET Core Web API (.NET 10, Clean Architecture). The only
+  surface that's selectively faked, and only in what logic serves a
+  response — every endpoint the frontend needs actually exists; see
+  `docs/architecture/demo-build-tiering.md` for which tier a given piece is.
+  No real database, ever. Auth is real (Keycloak, self-contained in local
+  docker-compose), not faked.
+- `infrastructure/` — CDKTF Python, targeting AWS.
+- `e2e/` — Playwright flow tests, real UI end to end, no rigging.
 
-The two surfaces share no code and have no build dependency on each other.
+`docs/architecture/` holds the ADRs (`ADR-backend-system-design.md`,
+`ADR-frontend-system-design.md`) and `demo-build-tiering.md` — read these for
+the why behind the how described here and in each surface's
+`CONVENTIONS.md`.
+
+The four surfaces share no code. Frontend/e2e call backend at runtime (real
+HTTP calls, not mocks, once a given feature is wired up); backend and
+infrastructure have no build dependency on frontend or e2e.
 
 ## Commands
 
@@ -32,6 +50,24 @@ dotnet test --filter "FullyQualifiedName~ContactStore"  # run a single test clas
 dotnet run --project src/Tarjay.Team.Api  # run the API
 ```
 
+### Infrastructure (`infrastructure/`)
+
+```bash
+poetry install        # install dependencies
+poetry run pytest     # unit / construct-synth tests
+poetry run ruff check .   # lint
+poetry run mypy .     # typecheck
+```
+
+### E2E (`e2e/`)
+
+```bash
+npm install           # install dependencies
+npm test              # run the whole suite, headless
+npm run test:smoke    # @smoke-tagged subset only
+npm run test:ui / test:headed / test:debug  # interactive local variants, not for CI
+```
+
 ## Frontend architecture
 
 **Zoneless Angular** — `provideZonelessChangeDetection()` is set globally. There is no `zone.js`. Angular only re-renders when a signal read in a template changes. Mutating a plain field without going through `signal.set()`/`.update()` will silently not re-render. This is the most critical runtime constraint in the frontend.
@@ -48,7 +84,7 @@ src/app/
 
 **Two distinct service shapes in `core/`:**
 
-1. **Backend-facing** (`auth`, `buyer`, `payment`, `product`, `sales`): each has an `I<Feature>Service` interface, a real service class that throws `'not configured yet'`, an `InjectionToken` in `core/tokens.ts`, and a `Mock*Service` in `mocks/`. Components inject **the token** (`inject(PRODUCT_SERVICE)`), never the concrete class. The mock is wired to the token in `app.config.ts`.
+1. **Backend-facing** (`auth`, `buyer`, `payment`, `product`, `sales`): each has an `I<Feature>Service` interface, a real service class that throws `'not configured yet'`, an `InjectionToken` in `core/tokens.ts`, and a `Mock*Service` in `mocks/`. Components inject **the token** (`inject(PRODUCT_SERVICE)`), never the concrete class. The mock is wired to the token in `app.config.ts` **only until that feature's real backend endpoints exist** — once real, `app.config.ts` swaps to the real service class for good, and the mock lives on only as a test double in that feature's own spec files (see `frontend/CONVENTIONS.md`). There is no demo/offline mode that keeps a mock wired into a real running app.
 
 2. **Local UI state** (`SaleService`): plain `@Injectable({providedIn: 'root'})` with signals and computed — no interface, no token, no mock. Inject the concrete class directly. Don't manufacture an interface/token for a store that does no I/O.
 
@@ -75,7 +111,7 @@ src/
   Tarjay.Team.Api/           # HTTP only: controllers, DI wiring, Program.cs
   Tarjay.Team.Domain/        # entities, interfaces, exceptions — zero framework references
   Tarjay.Team.Application/   # does not exist yet — create only when first use case needs it
-  Tarjay.Team.Infrastructure/ # does not exist yet — create only when first real store lands
+  Tarjay.Team.Infrastructure/ # does not exist yet — create when a real external dependency needs it (e.g. the auth provider client), not for persistence: there is no real database, ever (see backend/CONVENTIONS.md), so in-memory stores stay where they are today
 tests/
   Tarjay.Team.Api.IntegrationTests/   # WebApplicationFactory<Program>
   Tarjay.Team.Domain.UnitTests/       # xUnit + Moq
@@ -91,7 +127,7 @@ tests/
 
 **Known gaps (do not copy as patterns):**
 - No global exception handler (`IExceptionHandler`, `ProblemDetails` middleware) — controllers should translate domain exceptions to HTTP status codes manually until this is added.
-- Auth is scaffolded in test factory but not configured in `Program.cs` — do not add `[Authorize]` until real auth is wired end-to-end.
+- Auth is scaffolded in test factory but not configured in `Program.cs` — do not add `[Authorize]` until real auth is wired end-to-end. The destination is decided, not open: a real external identity provider (Keycloak), self-contained in local docker-compose (see `backend/CONVENTIONS.md`'s House opinions) — this isn't faked the way data-serving logic is.
 - `Tarjay.Team.Domain/Contact/` is disposable demo code (originally scoped for a Temporal demo that was never built). Its low-level syntax (file-scoped namespaces, XML doc comments) is real style; its `= null!` properties are the pattern to move away from.
 - No backend `.editorconfig` exists — 4-space indent for `.cs` is canonical but enforced by convention only. Add one when touching the backend config.
 
