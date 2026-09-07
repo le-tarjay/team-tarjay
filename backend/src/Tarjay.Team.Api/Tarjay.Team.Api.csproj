@@ -6,10 +6,13 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="FluentValidation" Version="12.0.0"/>
+        <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0"/>
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1"/>
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\Tarjay.Team.Domain\Tarjay.Team.Domain.csproj" />
+      <ProjectReference Include="..\Tarjay.Team.Infrastructure\Tarjay.Team.Infrastructure.csproj" />
     </ItemGroup>
 </Project>
