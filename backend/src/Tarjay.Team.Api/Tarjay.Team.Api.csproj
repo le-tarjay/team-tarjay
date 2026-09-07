@@ -3,13 +3,17 @@
     <PropertyGroup>
         <UserSecretsId>dotnet-Tarjay.Team.Backend-570c09aa-0896-4163-b880-454d878b9f59</UserSecretsId>
         <RootNamespace>Tarjay.Team.Api</RootNamespace>
+        <Version>1.0.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="FluentValidation" Version="12.0.0"/>
+        <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0"/>
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1"/>
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\Tarjay.Team.Domain\Tarjay.Team.Domain.csproj" />
+      <ProjectReference Include="..\Tarjay.Team.Infrastructure\Tarjay.Team.Infrastructure.csproj" />
     </ItemGroup>
 </Project>
