@@ -3,6 +3,7 @@
     <PropertyGroup>
         <UserSecretsId>dotnet-Tarjay.Team.Backend-570c09aa-0896-4163-b880-454d878b9f59</UserSecretsId>
         <RootNamespace>Tarjay.Team.Api</RootNamespace>
+        <Version>1.0.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
