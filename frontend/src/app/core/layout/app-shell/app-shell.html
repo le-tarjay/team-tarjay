@@ -4,54 +4,71 @@
   </a>
 
   <div class="navbar-nav me-auto">
-    <a
-      class="nav-link"
-      routerLink="/sale"
-      routerLinkActive="active"
-      [routerLinkActiveOptions]="{ exact: true }"
-    >
-      Sale
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/products"
-      routerLinkActive="active"
-    >
-      Products
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/sales"
-      routerLinkActive="active"
-    >
-      Sales
-    </a>
-
-    <a
-      class="nav-link"
-      routerLink="/buyers"
-      routerLinkActive="active"
-    >
-      Buyers
-    </a>
+    @for (item of navItems(); track item.label) {
+      @if (item.route; as route) {
+        <a
+          class="nav-link"
+          [routerLink]="route"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: isExactLink(item) }"
+        >
+          {{ item.label }}
+        </a>
+      } @else {
+        <button
+          type="button"
+          class="nav-link disabled"
+          disabled
+        >
+          {{ item.label }}
+        </button>
+      }
+    }
   </div>
 
   <div class="d-flex align-items-center gap-3">
-    @if (currentEmployee(); as employee) {
+    @if (identityLabel(); as identity) {
       <span class="navbar-text small">
-        Signed in as <strong>{{ employee.name }}</strong>
+        {{ identity }}
       </span>
     }
 
-    <button
-      type="button"
-      class="btn btn-outline-light btn-sm"
-      (click)="logout()"
-    >
-      Logout
-    </button>
+    <div class="dropdown">
+      <button
+        type="button"
+        class="btn btn-outline-light btn-sm dropdown-toggle"
+        [attr.aria-expanded]="isAccountMenuOpen()"
+        (click)="toggleAccountMenu()"
+      >
+        Account
+      </button>
+
+      @if (isAccountMenuOpen()) {
+        <div class="dropdown-menu dropdown-menu-end show">
+          @for (item of accountMenuItems(); track item.label) {
+            <button
+              type="button"
+              class="dropdown-item disabled"
+              disabled
+            >
+              {{ item.label }}
+            </button>
+          }
+
+          @if (accountMenuItems().length > 0) {
+            <hr class="dropdown-divider" />
+          }
+
+          <button
+            type="button"
+            class="dropdown-item"
+            (click)="logout()"
+          >
+            Logout
+          </button>
+        </div>
+      }
+    </div>
   </div>
 </nav>
 

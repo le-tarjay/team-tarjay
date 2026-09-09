@@ -1,5 +1,26 @@
 .app-navbar {
   background: #1a1a2e;
+
+  // The role-specific item is a `<button disabled>` while its screen belongs to
+  // a later epic, so it needs to sit flush with the real `.nav-link` anchors
+  // beside it instead of carrying a button's own chrome.
+  .navbar-nav .nav-link {
+    background: none;
+    border: 0;
+  }
+
+  // Bootstrap only applies the account menu's offsets under
+  // `[data-bs-popper]`, which its dropdown JavaScript sets — and this app
+  // loads Bootstrap's stylesheet only, never its scripts. These are the
+  // offsets Popper would otherwise have written, so the menu hangs under the
+  // toggle's right edge instead of falling back to its static position and
+  // overflowing the navbar.
+  .dropdown-menu {
+    top: 100%;
+    right: 0;
+    left: auto;
+    margin-top: 0.125rem;
+  }
 }
 
 .app-main {
