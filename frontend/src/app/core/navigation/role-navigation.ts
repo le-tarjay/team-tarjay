@@ -54,6 +54,22 @@ const STORE_MANAGER_ADMIN_ITEMS: readonly NavItem[] = [
   { label: 'Register status', route: null },
 ];
 
+/**
+ * Every item this module can ever produce, for any identity — the union the
+ * route gate reads to tell a nav destination apart from a route nav says
+ * nothing about (`route-access.ts`). Adding an item above means adding it
+ * here; a role-specific item missing from this list is a route the gate would
+ * silently wave through.
+ */
+export const ALL_NAV_ITEMS: readonly NavItem[] = [
+  ...SHARED_NAV_ITEMS,
+  RECEIVING_ITEM,
+  FULFILLMENT_ITEM,
+  MY_TASKS_ITEM,
+  STOCKING_ITEM,
+  ...STORE_MANAGER_ADMIN_ITEMS,
+];
+
 const CUSTOMER_SUPPORT_JOB_FUNCTION = 'customer support';
 
 /**

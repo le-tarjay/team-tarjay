@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { Subject, throwError } from 'rxjs';
-import { vi } from 'vitest';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { of, Subject, throwError } from 'rxjs';
+import { MockInstance, vi } from 'vitest';
 
 import { LoginComponent } from './login';
 import {
@@ -16,12 +16,29 @@ import { MockAuthService } from '../../mocks/mock-auth.service';
 
 const EMPTY_FIELDS_MESSAGE = 'Enter your employee ID and PIN.';
 
+const SIGNED_IN_EMPLOYEE: Employee = {
+  id: 'cashier',
+  name: 'Alex Rivera',
+  role: 'Associate',
+  department: 'Grocery',
+  jobFunction: 'Register',
+};
+
 describe('LoginComponent', () => {
   let component: LoginComponent;
   let fixture: ComponentFixture<LoginComponent>;
   let authService: IAuthService;
+  let navigate: MockInstance<Router['navigateByUrl']>;
+
+  /**
+   * Read fresh on every access, so a test can set the query string this screen
+   * was reached with before the navigation it is about to trigger.
+   */
+  let queryParams: Record<string, string>;
 
   beforeEach(async () => {
+    queryParams = {};
+
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
       providers: [
@@ -31,8 +48,20 @@ describe('LoginComponent', () => {
           provide: AUTH_SERVICE,
           useClass: MockAuthService,
         },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              get queryParamMap() {
+                return convertToParamMap(queryParams);
+              },
+            },
+          },
+        },
       ],
     }).compileComponents();
+
+    navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
 
     fixture = TestBed.createComponent(LoginComponent);
     component = fixture.componentInstance;
@@ -212,5 +241,103 @@ describe('LoginComponent', () => {
     expect(compiled.querySelector('#pin')).not.toBeNull();
 
     expect(submitButton().textContent?.trim()).toBe('Sign in');
+  });
+
+  /**
+   * Where sign-in lands is this screen's half of the deal; the route guard
+   * captured the destination and re-checks it on arrival. A destination the
+   * employee's role doesn't cover is not this screen's to refuse — it navigates
+   * there and the guard turns it away, which `core/auth/auth.guard.spec.ts`
+   * covers.
+   */
+  describe('landing after a successful sign-in', () => {
+    function signInSuccessfully(): void {
+      vi.spyOn(authService, 'login').mockReturnValue(of(SIGNED_IN_EMPLOYEE));
+
+      fillCredentials('cashier', '1234');
+      submit();
+    }
+
+    it('goes to the captured destination when the guard preserved one', () => {
+      queryParams = { returnUrl: '/products' };
+
+      signInSuccessfully();
+
+      expect(navigate).toHaveBeenCalledWith('/products');
+    });
+
+    it('keeps the query string of the captured destination', () => {
+      queryParams = { returnUrl: '/products?query=milk' };
+
+      signInSuccessfully();
+
+      expect(navigate).toHaveBeenCalledWith('/products?query=milk');
+    });
+
+    it('goes to the default destination when no destination was captured', () => {
+      signInSuccessfully();
+
+      expect(navigate).toHaveBeenCalledWith('/sale');
+    });
+
+    /**
+     * `returnUrl` arrives from the query string, so it is caller-supplied
+     * whatever put it there. Anything that isn't an in-app path is dropped
+     * silently — the employee still signs in and still lands somewhere real.
+     */
+    it.each(['https://evil.example/steal', '//evil.example/steal', 'products', ''])(
+      'ignores "%s" and uses the default destination instead',
+      (returnUrl) => {
+        queryParams = { returnUrl };
+
+        signInSuccessfully();
+
+        expect(navigate).toHaveBeenCalledWith('/sale');
+      },
+    );
+
+    it('does not navigate anywhere when the sign-in fails', () => {
+      queryParams = { returnUrl: '/products' };
+
+      fillCredentials('cashier', 'wrong-pin');
+      submit();
+
+      expect(alertText()).toBe(INVALID_CREDENTIALS_MESSAGE);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does not navigate while a sign-in is still in flight', () => {
+      queryParams = { returnUrl: '/products' };
+
+      vi.spyOn(authService, 'login').mockReturnValue(new Subject<Employee>().asObservable());
+
+      fillCredentials('cashier', '1234');
+      submit();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('arriving already signed in', () => {
+    function arriveSignedIn(): void {
+      authService.login({ employeeId: 'cashier', pin: '1234' }).subscribe();
+
+      const signedInFixture = TestBed.createComponent(LoginComponent);
+      signedInFixture.detectChanges();
+    }
+
+    it('goes straight to the captured destination', () => {
+      queryParams = { returnUrl: '/buyers' };
+
+      arriveSignedIn();
+
+      expect(navigate).toHaveBeenCalledWith('/buyers');
+    });
+
+    it('goes straight to the default destination when none was captured', () => {
+      arriveSignedIn();
+
+      expect(navigate).toHaveBeenCalledWith('/sale');
+    });
   });
 });
