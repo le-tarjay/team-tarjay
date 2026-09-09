@@ -16,17 +16,26 @@ export class LoginComponent implements OnInit {
   private readonly authService = inject(AUTH_SERVICE);
   private readonly router = inject(Router);
 
-  readonly employeeId = signal('');
-  readonly pin = signal('');
-  readonly isLoading = signal(false);
-  readonly errorMessage = signal('');
+  protected readonly employeeId = signal('');
+  protected readonly pin = signal('');
+  protected readonly isLoading = signal(false);
+  protected readonly errorMessage = signal('');
 
   ngOnInit(): void {
     if (this.authService.isAuthenticated()) {
       this.router.navigateByUrl('/sale');
     }
   }
-  login(): void {
+
+  protected login(): void {
+    // The disabled submit button stops the click path, but not an implicit
+    // submit from pressing Enter in a still-enabled field. Against the real
+    // endpoint the in-flight window is network latency rather than the mock's
+    // fixed delay, so it is wide enough to hit in practice.
+    if (this.isLoading()) {
+      return;
+    }
+
     this.errorMessage.set('');
 
     const employeeId = this.employeeId().trim();

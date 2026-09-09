@@ -26,7 +26,6 @@
             name="employeeId"
             type="text"
             class="form-control form-control-lg"
-            placeholder="cashier"
             autocomplete="username"
             [ngModel]="employeeId()"
             (ngModelChange)="employeeId.set($event)"
@@ -43,7 +42,6 @@
             name="pin"
             type="password"
             class="form-control form-control-lg"
-            placeholder="1234"
             autocomplete="current-password"
             [ngModel]="pin()"
             (ngModelChange)="pin.set($event)"
@@ -72,16 +70,6 @@
           }
         </button>
       </form>
-
-      <div class="login-hint mt-4 p-3 rounded bg-light border">
-        <div class="small text-secondary">
-          Demo credentials
-        </div>
-
-        <div class="fw-semibold">
-          cashier / 1234
-        </div>
-      </div>
     </div>
   </main>
 </div>
