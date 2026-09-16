@@ -1,0 +1,14 @@
+# Build-context excludes for api.Dockerfile.
+#
+# Named `<dockerfile>.dockerignore` rather than dropped into `backend/` as a plain
+# `.dockerignore`: BuildKit looks for a per-Dockerfile ignore file next to the
+# Dockerfile first, which keeps this file inside the surface that owns it.
+#
+# The exclusions matter. A host-side `dotnet build` leaves obj/project.assets.json
+# holding absolute host paths; copied into the image, it makes the container restore
+# fail in a way that reads as a dependency problem.
+**/bin/
+**/obj/
+**/artifacts/
+**/.vs/
+**/*.user
