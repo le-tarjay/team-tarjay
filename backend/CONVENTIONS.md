@@ -20,12 +20,11 @@ gaps in Code style.
 
 Persistence and auth are now decided, not open (see House opinions): there
 is no real database, ever — every endpoint's data comes from an in-memory
-collection or a hardcoded response, per the tier assigned to it in
-`docs/architecture/demo-build-tiering.md`. Auth is real, not tiered like
-data-serving logic — a real external identity provider (Keycloak),
-self-contained in local docker-compose, gates login end-to-end, per
-`docs/architecture/ADR-backend-system-design.md` §4 ("corporate is the sole
-identity/credential authority").
+collection or a hardcoded response, decided per piece as it's built. Auth is
+real, not faked the way data-serving logic is — a real external identity
+provider (Keycloak), self-contained in local docker-compose, gates login
+end-to-end, per "ADR: Store Backend System Design" §4 ("corporate is the sole
+identity/credential authority"), in Linear.
 
 ## Runtime & framework
 
@@ -173,7 +172,7 @@ Within `Domain`, organize by feature/aggregate (`Contact/`, not
   its own.
 - **Versioning**: URL-path versioning from day one — every route starts
   `/v1/...` — even though the frontend is the only consumer today. Deliberate:
-  `docs/architecture/ADR-backend-system-design.md`'s corporate-sync concept
+  "ADR: Store Backend System Design"'s corporate-sync concept
   (§14.1–14.3) is a second, genuinely external consumer this API will
   eventually need to support, and retrofitting versioning after that exists
   is real, avoidable pain.
@@ -214,7 +213,8 @@ Within `Domain`, organize by feature/aggregate (`Contact/`, not
 - **PINs and tokens never appear in a log line, at any level, including
   inside an exception's message.** Stated explicitly for this domain, not a
   generic aspiration — employee login and manager override both run on PINs
-  (see `docs/architecture/Team-Targét.dc.html`'s manager PIN override modal).
+  (see the design asset's manager PIN override modal — Team-Targét.dc.html,
+  attached to the project's Design issue in Linear).
 - Structured logging only, via `ILogger<T>`, one per class — see Preferred
   patterns, below, for the message-template convention.
 
@@ -308,7 +308,7 @@ than assuming a shape, per `infrastructure/CONVENTIONS.md`'s own rules:
   Terraform provider or package is an architect decision, raise it as a
   question") — don't assume infra will just pick this up on its own.
 - **This surface's own deployment shape** — how many services, what they run
-  on — is `docs/architecture/ADR-backend-system-design.md` §7's deliberately
+  on — is "ADR: Store Backend System Design" §7's deliberately
   unresolved question, restated in `../infrastructure/CONVENTIONS.md`'s
   Deliberately the specialist's call. A change here that implies an answer
   (e.g. splitting this API into two independently-deployed pieces) needs an
@@ -429,9 +429,9 @@ boundaries are, and what actually runs those images once pushed (see
   for a future real store, but as the permanent shape. Which specific
   in-memory approach a given piece uses (a genuine in-memory collection
   performing real computation, vs. a hardcoded/seeded response with no
-  computation behind it) is set per-piece in
-  `docs/architecture/demo-build-tiering.md` — that document, not this one, is
-  the source of truth for which tier a given feature is. Still define the
+  computation behind it) is decided per piece as that piece is built; there
+  is no separate document assigning it. Where the right choice isn't obvious
+  for a feature, raise it rather than picking unilaterally. Still define the
   interface in `Domain` regardless of tier (`IContactStore`-style) — that
   discipline doesn't change just because there's no real store to swap in
   later.
@@ -439,7 +439,7 @@ boundaries are, and what actually runs those images once pushed (see
   Unlike persistence, auth is not something this project fakes — login routes
   through a real external identity provider (Keycloak), run as a
   self-contained instance in local docker-compose. This matches
-  `docs/architecture/ADR-backend-system-design.md` §4's "corporate is the
+  "ADR: Store Backend System Design" §4's "corporate is the
   sole identity/credential authority" — Keycloak plays that role locally.
   Today, `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` call and
   `appsettings.json` has no `Identity` section (`ApiWebApplicationFactory`'s
