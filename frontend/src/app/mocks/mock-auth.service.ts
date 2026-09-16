@@ -2,7 +2,11 @@
 import { computed, Injectable, signal } from '@angular/core';
 import { delay, Observable, of, throwError } from 'rxjs';
 
-import { IAuthService, LoginCredentials } from '../core/auth/auth.service';
+import {
+  IAuthService,
+  INVALID_CREDENTIALS_MESSAGE,
+  LoginCredentials,
+} from '../core/auth/auth.service';
 import { Employee } from '../core/models/auth/employee.model';
 
 @Injectable()
@@ -18,13 +22,15 @@ export class MockAuthService implements IAuthService {
       credentials.pin === '1234';
 
     if (!isValidLogin) {
-      return throwError(() => new Error('Invalid employee ID or PIN.'));
+      return throwError(() => new Error(INVALID_CREDENTIALS_MESSAGE));
     }
 
     const employee: Employee = {
       id: 'cashier',
       name: 'Alex Rivera',
-      role: 'cashier',
+      role: 'Associate',
+      department: 'Grocery',
+      jobFunction: 'Register',
     };
 
     this.employee.set(employee);

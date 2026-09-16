@@ -11,8 +11,14 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         builder.Services.AddContactStore();
+        builder.Services.AddEmployeeIdentity(builder.Configuration);
+        builder.Services.AddRequestValidation();
+        builder.Services.AddApiExceptionHandling();
         builder.Services.AddControllers();
         var app = builder.Build();
+
+        // First in the pipeline, so nothing downstream can throw past it.
+        app.UseExceptionHandler();
 
         app.UseHttpsRedirection();
 
