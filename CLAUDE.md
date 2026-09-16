@@ -13,17 +13,20 @@ code in any of them:
   nothing rigged up here.
 - `backend/` — ASP.NET Core Web API (.NET 10, Clean Architecture). The only
   surface that's selectively faked, and only in what logic serves a
-  response — every endpoint the frontend needs actually exists; see
-  `docs/architecture/demo-build-tiering.md` for which tier a given piece is.
+  response — every endpoint the frontend needs actually exists; a given
+  piece is either an in-memory collection doing real computation or a
+  hardcoded response, decided per piece as it's built.
   No real database, ever. Auth is real (Keycloak, self-contained in local
   docker-compose), not faked.
 - `infrastructure/` — CDKTF Python, targeting AWS.
 - `e2e/` — Playwright flow tests, real UI end to end, no rigging.
 
-`docs/architecture/` holds the ADRs (`ADR-backend-system-design.md`,
-`ADR-frontend-system-design.md`) and `demo-build-tiering.md` — read these for
-the why behind the how described here and in each surface's
-`CONVENTIONS.md`.
+The ADRs live in Linear, not in this repo — "ADR: Store Backend System
+Design" and "ADR: Associate Roles, Permissions, and Identity State
+(Frontend)". Read them for the why behind the how described here and in each
+surface's `CONVENTIONS.md`. Each project also carries its own
+"Reference: ADR — …" copy; the workspace-level documents are the canonical
+ones.
 
 The four surfaces share no code. Frontend/e2e call backend at runtime (real
 HTTP calls, not mocks, once a given feature is wired up); backend and

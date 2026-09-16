@@ -16,10 +16,9 @@ worked example, not as a large body of precedent to generalize from.
 **Scope, stated explicitly:** the frontend and this suite are both meant to
 be totally real, production-built — nothing rigged up on this side, ever.
 The backend is what's selectively faked, and only in what logic serves a
-response (an in-memory collection vs. a hardcoded response, per
-`../docs/architecture/demo-build-tiering.md`), never in whether an endpoint
-exists — every endpoint the frontend needs, exists. As of this writing the
-code still runs on `Mock*Service` for most features (see
+response (an in-memory collection vs. a hardcoded response), never in
+whether an endpoint exists — every endpoint the frontend needs, exists. As
+of this writing the code still runs on `Mock*Service` for most features (see
 `../frontend/CONVENTIONS.md`'s Status) — that's a bootstrapping state, not
 the target one. **Once a feature's real backend endpoints are wired into the
 frontend, this suite's flows for that feature go through the real backend

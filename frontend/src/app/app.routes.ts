@@ -19,6 +19,13 @@ export const routes: Routes = [
     path: '',
     component: AppShellComponent,
     canActivate: [authGuard],
+    /**
+     * Not redundant with `canActivate`: the shell is activated once and then
+     * reused, so without this a move between two of its children is never
+     * checked again. A route whose nav item only some roles see declares it
+     * with `data: { navItem: '...' }` — see `core/navigation/route-access.ts`.
+     */
+    canActivateChild: [authGuard],
     children: [
       {
         path: 'sale',
