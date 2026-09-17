@@ -1,0 +1,35 @@
+// Dev-server proxy for the `ng serve` inner loop: this surface running outside the
+// docker-compose stack, on localhost:4200, against the composed API.
+//
+// It exists so AuthService's SIGN_IN_ENDPOINT can stay a relative path. The composed
+// stack is already same-origin because nginx routes /v1/* to the API inside the network
+// (infrastructure/local/web/nginx.conf); this is the same idea for the dev server. With
+// both in place, neither way of running the app needs an API base URL reaching the
+// bundle -- which is what CONVENTIONS.md's "Infrastructure impact" says to raise rather
+// than bake in.
+//
+// The dev server reads this at serve time only (angular.json's `serve` target,
+// `proxyConfig`). No module imports it and it reaches no build output.
+//
+// Comments are legal here: @angular/build parses a .json proxy config with jsonc-parser,
+// not JSON.parse.
+{
+  // A plain prefix, not a glob. @angular/build passes a non-glob key through to Vite
+  // untouched, and Vite proxies any path that starts with it -- so /v1/employees/sign-in
+  // and its query string arrive at the API exactly as sent. A glob key would be
+  // rewritten into a regex that has to match the query string too.
+  //
+  // There is deliberately no `pathRewrite`. Dropping the /v1 prefix would send every
+  // call to the API root, which answers 404 -- and a 404 lands in AuthService's
+  // `default:` branch as the generic failure message, which is the exact symptom this
+  // proxy exists to remove. The composed stack hit the same class of problem on the
+  // nginx side (LET-119).
+  "/v1": {
+    // 5080, not 8080: docker-compose publishes the API there because 8080 on the host is
+    // already Keycloak's (infrastructure/local/docker-compose.yml, `api` ports).
+    "target": "http://localhost:5080",
+
+    // The local stack serves plain HTTP -- there is no certificate to validate.
+    "secure": false
+  }
+}

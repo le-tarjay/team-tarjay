@@ -1,0 +1,109 @@
+# The local runtime for Team Targét: frontend, API, and identity provider.
+#
+# Start it from this directory with `docker compose up --build`. See
+# ../README.md ("Local runtime") for ports, credentials, and the admin console.
+#
+# There is no database service, and there never will be: CLAUDE.md and
+# backend/CONVENTIONS.md both settle that every endpoint's data comes from an in-memory
+# store. Keycloak's dev mode carries its own embedded store inside the container.
+
+name: tarjay-local
+
+services:
+  # Keycloak, the identity authority that holds employee credentials and the role,
+  # department, and job function the API resolves at sign-in.
+  id:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: tarjay-id
+
+    # --import-realm reads every file in /opt/keycloak/data/import at start. The realm
+    # is a committed export, so it is reproducible: a realm configured by clicking
+    # through the admin console would not survive a teardown.
+    command: ["start-dev", "--import-realm"]
+
+    environment:
+      # Bootstrap admin for the console at http://localhost:8080. Local-only, throwaway,
+      # and unrelated to employee credentials -- no employee signs in with this.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+
+    ports:
+      # 8080 is not a free choice: it is the authority backend/appsettings.json already
+      # configures, so changing it means changing that file.
+      - "8080:8080"
+
+    volumes:
+      - ./keycloak/team-targe-realm.json:/opt/keycloak/data/import/team-targe-realm.json:ro
+
+    # Deliberately no volume for Keycloak's own data. `docker compose down` therefore
+    # discards the embedded store and the next start re-imports the realm from scratch,
+    # which is what makes the realm identical across a teardown instead of accumulating
+    # whatever someone changed by hand.
+
+    networks: [tarjay]
+
+  # The ASP.NET Core API.
+  api:
+    build:
+      context: ../../backend
+      dockerfile: ../infrastructure/local/api.Dockerfile
+    container_name: tarjay-api
+
+    environment:
+      # The one setting that has to be overridden rather than read from
+      # appsettings.json. That file configures the authority as http://localhost:8080,
+      # which is correct for a developer's own machine and wrong inside a container,
+      # where localhost:8080 is the API itself. Realm and client id are deliberately
+      # NOT repeated here -- they are right in appsettings.json, and duplicating them
+      # would let this file silently override a real change to it.
+      Identity__Authority: "http://id:8080"
+
+    ports:
+      # Published so the `ng serve` inner loop and a developer with curl can reach the
+      # API directly, even though `web` proxies it in-network. 8080 on the host is
+      # already Keycloak's, hence 5080.
+      - "5080:8080"
+
+    # A TCP check, not an HTTP one: the API has no health endpoint, and adding one would
+    # mean changing backend code, which this story's scope boundary rules out. Accepting
+    # connections is the honest readiness signal available without one.
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+    # Ordering only, not readiness. The API calls Keycloak per sign-in request rather
+    # than at startup, so it does not need a ready authority to boot -- and if Keycloak
+    # is genuinely down, the API's own "authority unreachable" response is the behaviour
+    # worth seeing.
+    depends_on: [id]
+
+    networks: [tarjay]
+
+  # The Angular frontend, production-built, served by nginx, and proxying /v1/* to the
+  # API so the composed stack is same-origin.
+  web:
+    build:
+      context: ../../frontend
+      dockerfile: ../infrastructure/local/web.Dockerfile
+    container_name: tarjay-web
+
+    ports:
+      # 4200 keeps e2e/playwright.config.ts's existing baseURL valid with no change.
+      - "4200:80"
+
+    volumes:
+      # Mounted rather than baked in: web.Dockerfile's build context is the frontend
+      # surface and cannot COPY a file from this one.
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+    depends_on: [api]
+
+    networks: [tarjay]
+
+networks:
+  tarjay:
+    driver: bridge

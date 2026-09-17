@@ -17,15 +17,22 @@ worked example, not as a large body of precedent to generalize from.
 be totally real, production-built — nothing rigged up on this side, ever.
 The backend is what's selectively faked, and only in what logic serves a
 response (an in-memory collection vs. a hardcoded response), never in
-whether an endpoint exists — every endpoint the frontend needs, exists. As
-of this writing the code still runs on `Mock*Service` for most features (see
-`../frontend/CONVENTIONS.md`'s Status) — that's a bootstrapping state, not
-the target one. **Once a feature's real backend endpoints are wired into the
-frontend, this suite's flows for that feature go through the real backend
-automatically** — there is no separate "wire e2e up to the real backend"
-step to wait for, and no gate to ask about. The only thing still genuinely
-open is *how* auth-dependent flows work once real auth lands — see Auth in
-tests, below.
+whether an endpoint exists — every endpoint the frontend needs, exists.
+
+**This is now literally true of the suite, not just an intention.** The
+frontend is served to these tests as a production bundle behind nginx, from
+the local docker-compose stack in `../infrastructure/local`, and the suite
+stands that stack up itself — see Runtime & tooling. Booting the Angular dev
+server, which this config did until LET-122, never satisfied the
+production-built requirement above.
+
+Auth is real: sign-in goes through the API to Keycloak, and `AUTH_SERVICE` is
+wired to the real `AuthService` in `app.config.ts`. The remaining features
+(buyer, payment, product, sales) still run on their `Mock*Service` — that's a
+bootstrapping state, not the target one. **Once a feature's real backend
+endpoints are wired into the frontend, this suite's flows for that feature go
+through the real backend automatically** — there is no separate "wire e2e up
+to the real backend" step to wait for, and no gate to ask about.
 
 ## Orientation
 
@@ -41,9 +48,23 @@ implementation details.
   (install only the browsers you need). Firefox/WebKit projects are left
   commented out in `playwright.config.ts`, ready to enable later; this is
   not a permanent decision, just today's.
-- `playwright.config.ts`'s `webServer` block boots the frontend's own dev
-  server (`npm start` in `../frontend`, `http://localhost:4200`) — there is
-  nothing on the backend for this config to stand up.
+- `playwright.config.ts`'s `webServer` block brings up the **whole stack** —
+  `docker compose up --build` in `../infrastructure/local`, running the
+  production-built frontend at `http://localhost:4200`, the API, and Keycloak
+  together. `baseURL` is unchanged; what serves it is not. **Docker is a hard
+  requirement for running this suite.**
+- **Readiness is two gates, and a fixed sleep is never one of them.**
+  `webServer` waits for the frontend to answer; `global-setup.ts` then polls
+  the realm's OIDC discovery document until it answers `200`. Keycloak's
+  container reports up roughly 25 seconds before its realm import completes,
+  and **a sign-in attempted inside that window is rejected as an invalid
+  credential** — it presents as a code failure rather than a timing one.
+  Anything new that depends on the stack being ready polls for a real signal
+  the same way.
+- The `webServer` timeout is sized for a **cold** start, because a CI runner
+  is always cold: images are built, the Angular production bundle compiled,
+  the API published. Treat hitting it as a real failure to read the build log
+  over, not a number to nudge upward.
 - **`@playwright/cli`** is also a dev dependency — a separate,
   token-efficient browser-control CLI built for coding agents, distinct
   from the `@playwright/test` framework above. Run
@@ -62,6 +83,7 @@ e2e/
   fixtures/
     credentials.ts          # e2e-owned test data
     auth.ts                 # shared authenticatedPage fixture
+  global-setup.ts           # waits for the stack's realm import before any spec
 ```
 
 **Folder-per-feature under `tests/`.** One folder per feature
@@ -93,38 +115,70 @@ user actually sees and interacts with, not the DOM shape.
 
 ## Auth in tests
 
-`MockAuthService` keeps sign-in state in a plain in-memory signal — nothing
-is written to `localStorage` or a cookie (confirmed in
-`frontend/src/app/mocks/mock-auth.service.ts` and
-`frontend/src/app/core/auth/auth.guard.ts`). Playwright's usual
-`storageState`-reuse pattern (log in once, replay the saved session) has
-nothing to capture here.
+**Auth is real.** Sign-in posts to the API, which resolves the credential
+against Keycloak by OIDC password grant and then reads the employee's role,
+department, and job function from `userinfo`. `MockAuthService` is no longer
+wired into the running app — it survives only as a test double inside the
+frontend's own specs. A credential that only ever worked against the mock
+authenticates against nothing here.
 
-Every test needing an authenticated page uses the shared
-`authenticatedPage` fixture in `fixtures/auth.ts`, which drives the real
-login form. It is still a real UI login on every test that uses it — the
-fixture only removes the boilerplate from each spec, not the login itself.
+**Every authenticated test still drives the real login form. `storageState`
+reuse is not viable, and this is now a settled answer rather than an open
+question.** The reason changed but the conclusion didn't: `AuthService` holds
+the signed-in employee in an in-memory `signal<Employee | null>` and writes
+nothing to `localStorage` or a cookie (`core/auth/auth.service.ts`). There is
+no client-side session artifact for Playwright to capture and replay, so
+logging in once and reusing the state would capture an empty profile. Revisit
+this only if the frontend starts persisting the session client-side — a
+browser reload signing the employee back in is the observable tell.
 
-**This whole section describes today's bootstrapping state, not the target
-one.** Auth is moving to a real external identity provider (Keycloak,
-self-contained in local docker-compose — see
-`../backend/CONVENTIONS.md`'s House opinions), not staying mocked. Once
-that lands, everything above needs a real rewrite: what a real IdP's session
-looks like client-side, whether `storageState` reuse becomes viable, and
-whether `authenticatedPage` still drives a full UI login every test or can
-reuse a stored session. None of that is decided yet — this section stays as
-written until it is, rather than guessing at a shape now.
+Use the shared `authenticatedPage` fixture in `fixtures/auth.ts` rather than
+repeating login steps inline. It is parameterized by employee, defaulting to
+the Associate:
+
+```ts
+import { test, expect } from '../../fixtures/auth';
+import { STORE_MANAGER } from '../../fixtures/credentials';
+
+test.use({ employee: STORE_MANAGER });
+
+test('...', async ({ authenticatedPage }) => { /* already signed in */ });
+```
+
+Parameterized by **employee**, not by role, because two seeded employees share
+the `Associate` role and differ only by job function — and job function is
+what decides that employee's nav tail. `EMPLOYEES_BY_ROLE` is there when a
+spec genuinely wants to select by role.
+
+**A sign-in that fails inside the fixture fails the test there, loudly**, with
+the login screen's own error message attached. Handing back an
+unauthenticated page makes some later assertion fail somewhere confusing, and
+the real cause then gets diagnosed as a nav bug. Anything new that
+authenticates keeps that property.
+
+Every role lands on `/sale` after sign-in: it is a shared nav item every role
+earns, so the route gate never turns anyone away from it. That is why one
+post-sign-in assertion works for all of them.
 
 ## Test data
 
-**e2e owns its own test data, decoupled from the frontend's mocks.**
-`fixtures/credentials.ts` defines `CASHIER_CREDENTIALS` and `INVALID_PIN`
-as e2e's own constants. Even where these values match
-`mock-auth.service.ts`'s accepted credentials today, do not import from
-`frontend/src/app/mocks/*` — a demo-data change made for frontend/UX
-reasons should not silently break an e2e spec, and a change to e2e's own
-test data should be a deliberate edit in `fixtures/`, not a side effect of
-someone else's change elsewhere.
+**e2e owns its own test data, decoupled from every other surface.**
+`fixtures/credentials.ts` defines the seeded employees and `INVALID_PIN` as
+e2e's own constants. Do not import from `frontend/src/app/mocks/*` — a
+demo-data change made for frontend/UX reasons should not silently break an
+e2e spec, and a change to e2e's own test data should be a deliberate edit in
+`fixtures/`, not a side effect of someone else's change elsewhere.
+
+**The credentials are now a mirror, and the realm export is the original.**
+The employees in `fixtures/credentials.ts` are the ones seeded into
+`../infrastructure/local/keycloak/team-targe-realm.json`, and they only
+authenticate because that file seeds them. The decoupling rule above still
+holds — this surface keeps its own copy rather than importing across the
+surface boundary — but the two have to agree, and the realm export wins when
+they don't. These five are fixed by their story's table, not demo data anyone
+may retune. `INVALID_PIN` is deliberately a PIN no seeded employee has;
+paired with a real Employee ID it exercises a rejected credential rather than
+an unknown user.
 
 ## Test levels
 
@@ -134,8 +188,11 @@ No unit tests and no integration tests live in `e2e/`.
 **What "flow test" means here:** a full user journey through the running
 Angular app in a real Chromium browser — navigate, interact via accessible
 locators, assert on visible text and URL. Not a component test (no
-`TestBed`, no mounting in isolation) and not an API test (nothing calls the
-backend directly, since there is no real backend yet — see Status).
+`TestBed`, no mounting in isolation) and not an API test: a spec drives the
+browser and never calls the API or Keycloak directly, even though both are
+now running and reachable. The one exception is `global-setup.ts`, which
+polls the identity provider to decide when the stack is ready — readiness
+plumbing, not coverage.
 
 **How it's invoked:** `npm test` runs the whole suite headless. `npm run
 test:smoke` runs only `@smoke`-tagged tests (see Tagging, below) for a
