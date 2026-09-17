@@ -40,7 +40,7 @@ test.describe('login', () => {
       await page.getByLabel('PIN').fill(INVALID_PIN);
       await page.getByRole('button', { name: 'Sign in' }).click();
 
-      await expect(page.getByRole('alert')).toHaveText('Invalid employee ID or PIN.');
+      await expect(page.getByRole('alert')).toHaveText('Invalid employee ID or PINX.');
       await expect(page).toHaveURL(/\/login$/);
     },
   );
