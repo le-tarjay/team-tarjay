@@ -69,13 +69,18 @@ docker compose up --build
 
 That serves the production build at `http://localhost:4200`, with the API and Keycloak behind it. Keycloak imports its realm a few seconds after the containers report up, so a sign-in attempted immediately may be rejected — wait for `http://localhost:8080/realms/team-targe/.well-known/openid-configuration` to answer.
 
-**The inner loop**, for working on this surface with live reload. Start the stack above, then in another terminal:
+**The inner loop**, for working on this surface with live reload. It needs the API and Keycloak but deliberately **not** the stack's own `web` service: that one publishes port 4200, which is the port `ng serve` wants, and `ng serve` refuses to start while it is held. Bring up the API — Compose starts Keycloak alongside it — and serve the frontend yourself:
 
 ```bash
+cd ../infrastructure/local
+docker compose up -d api    # starts `id` too, via depends_on; leaves `web` down
+cd ../../frontend
 ng serve
 ```
 
-Navigate to `http://localhost:4200`. The application reloads on file changes, and `proxy.config.json` forwards `/v1` to the API in the stack. Without the stack running, sign-in fails with a generic error — that is the proxy reporting a refused connection, not a bug.
+If the whole stack is already running, `docker compose stop web` frees the port.
+
+Navigate to `http://localhost:4200` — now the dev server rather than nginx. The application reloads on file changes, and `proxy.config.json` forwards `/v1` to the API on port 5080. Without the API running, sign-in fails with a generic error rather than the offline one: the dev-server proxy answers a refused connection with a 500, and `AuthService` reserves its offline message for status 0. That is correct behaviour in all three components, not a bug.
 
 Seeded employee credentials are in `infrastructure/README.md`.
 
