@@ -36,6 +36,14 @@ export default defineConfig({
   globalSetup: './global-setup.ts',
 
   /*
+   * Stops the stack on CI, and says so when it deliberately doesn't stop it
+   * locally. This is what actually guarantees teardown: the signal-based route
+   * below works on POSIX and silently does not on Windows. See
+   * global-teardown.ts.
+   */
+  globalTeardown: './global-teardown.ts',
+
+  /*
    * A sign-in is a real round trip now — the API exchanges the credential for
    * a token with Keycloak, then reads `userinfo` — rather than a mock's fixed
    * delay. This raises how long an assertion waits for the app to catch up; it
@@ -117,8 +125,13 @@ export default defineConfig({
     stderr: 'pipe',
 
     /*
-     * Give `docker compose up` the SIGTERM it needs to stop the containers it
-     * started, rather than being killed outright and leaving them running.
+     * Best-effort, and deliberately not what the suite relies on. On POSIX
+     * `docker compose up` catches this and stops its containers on the way
+     * out. On Windows it cannot: Node has no graceful POSIX signal to send, the
+     * CLI is terminated outright, and the containers — which live in the daemon,
+     * not under that process — keep running. Observed 2026-09-17, all three
+     * still up after a green run. global-teardown.ts is the guarantee; this
+     * just makes the common case tidy.
      */
     gracefulShutdown: {
       signal: 'SIGTERM',

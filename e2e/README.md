@@ -69,6 +69,13 @@ is sized for that. A warm run skips the build. Locally the suite reuses a
 stack that is already up; on CI it never does, so a half-configured local
 stack can't serve a CI run.
 
+**After a local run the stack is still up, deliberately.** That is what makes
+the next run warm, and it means the suite never stops a stack you started for
+your own work. Stop it yourself with `docker compose down` in
+`../infrastructure/local`; the suite prints that reminder when it finishes. On
+CI, `global-teardown.ts` stops it for you — explicitly, rather than by
+signalling `docker compose`, which does not stop containers on Windows.
+
 Sign-in uses the realm's seeded employees, mirrored in
 `fixtures/credentials.ts`. `10041` / `4417` is the Associate; see that file
 for one per role plus the Customer Support case.
