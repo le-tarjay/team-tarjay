@@ -10,9 +10,10 @@ treat as precedent. The design is deliberately borrowed from Kisasa's
 `intent-to-production/infrastructure` (the same framework, in TypeScript) — that project's
 patterns are real precedent to follow, not an accident of what happened to exist.
 
-ADRs now exist in `docs/architecture/` (`ADR-backend-system-design.md`,
-`ADR-frontend-system-design.md`) — read them for context. One is directly
-relevant to this surface: `ADR-backend-system-design.md` §7 ("Local
+The ADRs live in Linear, not in this repo — "ADR: Store Backend System
+Design" and "ADR: Associate Roles, Permissions, and Identity State
+(Frontend)". Read them for context. One is directly relevant to this
+surface: "ADR: Store Backend System Design" §7 ("Local
 Deployment Topology — Deliberately Abstracted") originally left physical/
 hardware deployment shape, and whether the local backend is one unified
 service or several, both undecided on purpose. The architect has since
@@ -150,7 +151,7 @@ else is not decided — a specialist facing that need should raise it as a quest
 than picking a shape unilaterally.
 
 Physical deployment topology is partially decided, partially still open —
-this narrows `ADR-backend-system-design.md` §7's original silence, it
+this narrows "ADR: Store Backend System Design" §7's original silence, it
 doesn't close it. **Decided:** the backend is multiple independently
 deployed services, not one unified service, and each builds a versioned
 container image pushed to ECR (see `backend/CONVENTIONS.md`'s CI). **Still

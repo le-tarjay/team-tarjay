@@ -15,8 +15,7 @@ same either way.") — that README line is now the whole plan, not a hedge:
 frontend and e2e are meant to be totally real, nothing rigged up on this
 side, ever. The backend is what's selectively faked, and only in what logic
 serves a response, never in whether an endpoint exists — see
-`../backend/CONVENTIONS.md`'s House opinions and
-`../docs/architecture/demo-build-tiering.md`. Most of the codebase is
+`../backend/CONVENTIONS.md`'s House opinions. Most of the codebase is
 consistent and worth treating as real precedent. Two known defects, not
 precedent:
 
@@ -25,11 +24,11 @@ precedent:
   before the real `src/app/features/payment/payment.ts` existed. It isn't
   routed anywhere and shouldn't be extended; it should be deleted.
 - The README describes `/docs/architecture` (ADRs) and `/docs/domain` (a
-  domain glossary). `/docs/architecture` is now real —
-  `ADR-backend-system-design.md`, `ADR-frontend-system-design.md`, and
-  `demo-build-tiering.md` all live there; read them for context.
-  `/docs/domain` still doesn't exist — that half of the README's claim stays
-  aspirational.
+  domain glossary). Neither is where the ADRs actually are: they live in
+  Linear, as "ADR: Store Backend System Design" and "ADR: Associate Roles,
+  Permissions, and Identity State (Frontend)" — read them there.
+  `/docs/domain` doesn't exist either, so both halves of the README's claim
+  stay aspirational.
 
 Where older files disagree with newer ones (see Project structure), the
 newer pattern is called out as canonical below.
