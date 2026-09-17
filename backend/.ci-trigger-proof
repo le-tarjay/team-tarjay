@@ -1,0 +1,2 @@
+Throwaway probe for LET-127: proves .github/workflows/e2e.yml triggers on a
+backend-only change. This branch is deleted once observed.
