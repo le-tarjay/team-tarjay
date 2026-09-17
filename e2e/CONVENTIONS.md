@@ -228,15 +228,63 @@ later.
 
 ## CI
 
-`.github/workflows/e2e.yml` runs on every push to `main` and every pull
-request touching `e2e/**` or `frontend/**`: installs frontend and e2e
-dependencies, installs the Chromium browser, runs the suite, and uploads
-the HTML report as a build artifact. `frontend.yml` and `backend.yml` are
-still checkout-only stubs today, but both now have a decided direction to
-implement (test, then package/deploy — see each surface's own
-`CONVENTIONS.md` CI section) — that's a real, near-term gap to close, not a
-reason to hold e2e back, since a specialist's own PR triggering a real CI
-run is the actual point either way.
+`.github/workflows/e2e.yml` **now exists** (LET-127). Until then this section
+described it in the present tense and the file had never been written — the
+same failure mode as the docker-compose claim that cost LET-106 nine days.
+What follows is what the workflow does, checked against the file.
+
+It runs on every push to `main` and every pull request touching `e2e/**`,
+`frontend/**`, `backend/**`, `infrastructure/local/**`, or the workflow
+itself, plus `workflow_dispatch`. **That list is wider than this section used
+to claim, and deliberately so.** Since LET-122 the suite stands up the whole
+stack, so the API and the compose stack can break it as easily as the
+frontend can — `backend/**` is the most likely source of a break, not an
+edge case. It stops at `infrastructure/local/**` rather than
+`infrastructure/**` because the rest of that surface is the CDKTF AWS
+application, which this suite never runs.
+
+The job installs the e2e dependencies with `npm ci`, installs **Chromium
+only** (`npx playwright install --with-deps chromium`, per Runtime & tooling
+above), and runs `npm test`. It does **not** install frontend dependencies —
+an earlier version of this section said it did, and that has not been true
+since LET-122: the frontend is compiled into the `web` image by
+`docker compose`, not built on the runner.
+
+**The workflow is one command, because `playwright.config.ts` already does
+the CI-shaped work.** `webServer` brings the stack up, `globalSetup` polls the
+realm, `globalTeardown` stops it. The workflow consumes all three rather than
+restating any of them as shell steps — a second way to stand the stack up
+would diverge from the local one, and the local one is the tested one.
+Specifically: no sleep, no wait step, and no health-check loop belongs in the
+workflow, and neither does `--shard` or a `workers` override (see
+`fullyParallel` in `playwright.config.ts` for why the suite is serial).
+
+The HTML report and the trace files upload as a build artifact
+(`playwright-report/` and `test-results/`) **on failure as well as success**.
+A report that survives only a green run is missing exactly when it is needed.
+
+The job runs on a plain `ubuntu-latest` runner, not a container job:
+`tests/identity/corporate-unreachable.spec.ts` and `global-teardown.ts` both
+invoke the `docker compose` CLI from the test process, so Docker has to be on
+the job's own PATH. Its timeout is **30 minutes**, against a ~21-minute worst
+legitimate case (`webServer`'s 900s cold-build budget plus `globalSetup`'s
+180s realm poll plus install and suite). A timeout tuned like a unit-test
+job's would kill a slow cold build and report it as a test failure.
+
+`CI` is left set, which every GitHub runner does by default and the workflow
+also states explicitly. Four things key off it — teardown, `retries: 2`,
+`reuseExistingServer`, and `forbidOnly` — and all four fail quietly rather
+than loudly without it.
+
+**One caveat worth carrying:** `retries: 2` on CI can hide the realm-readiness
+race. A run that fails once and passes on the retry reports green. If this job
+ever passes only on a retry, that is a finding to report, not a pass — read
+the log for `Realm ready after …s.` before the first spec and `Stack stopped.`
+at the end.
+
+The sibling workflows are no longer stubs either: `frontend.yml` (LET-124),
+`backend.yml` (LET-125), and `infrastructure.yml` (LET-126) all install their
+toolchain and run their surface's real checks.
 
 ## Never in this codebase
 

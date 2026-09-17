@@ -1,0 +1,214 @@
+name: Team Targét E2E
+
+# The path filter is deliberately wider than e2e/CONVENTIONS.md used to
+# describe, and wider than the sibling workflows' single-surface filters.
+#
+# Since LET-122 this suite stands up the whole stack — the production-built
+# frontend behind nginx, the ASP.NET Core API, and Keycloak — via
+# playwright.config.ts's `webServer`. So the set of changes that can break it is
+# the set of changes that go into that stack, not just the two surfaces the old
+# conventions text named:
+#
+#   - e2e/**              the suite itself
+#   - frontend/**         built into the `web` image; every locator targets it
+#   - backend/**          built into the `api` image; every sign-in goes through it
+#   - infrastructure/local/**  the compose file, the two Dockerfiles, the nginx
+#                         config, and the realm export that seeds the very
+#                         credentials fixtures/credentials.ts mirrors
+#
+# `backend/**` is the important addition: the suite now depends on the API for
+# every flow, so the API is the most likely source of a break, and a trigger
+# list inherited from the old text would have missed it entirely.
+#
+# `infrastructure/local/**` rather than `infrastructure/**` on purpose. The rest
+# of that surface is the CDKTF AWS application, which this suite never runs and
+# cannot be broken by. Triggering a ~20-minute stack-building job on an unrelated
+# `main.py` edit would be a cost with no signal attached. If a change to the
+# compose stack ever moves out of `local/`, widen this.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "e2e/**"
+      - "frontend/**"
+      - "backend/**"
+      - "infrastructure/local/**"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+    paths:
+      - "e2e/**"
+      - "frontend/**"
+      - "backend/**"
+      - "infrastructure/local/**"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch: {}
+
+# Cancel superseded runs on the same ref to save CI minutes. This job is by far
+# the most expensive in the repository, so the saving is real here in a way it
+# is not for the unit-test jobs.
+#
+# Cancelling does mean `global-teardown.ts` never runs and the stack's three
+# containers are killed rather than stopped. That leaks nothing: the runner is
+# an ephemeral VM discarded with the job, and the containers live in its Docker
+# daemon, not anywhere durable. The teardown matters for its exit signal and for
+# a developer's own machine, not for reclaiming a runner.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: e2e
+
+jobs:
+  test:
+    # Named for the one level this surface runs (e2e/CONVENTIONS.md, Test
+    # levels): flow tests through a real Chromium browser against the real
+    # stack. There is no build step and no lint step to fold into the name —
+    # this surface has neither.
+    name: Flow tests
+    # A plain runner, not a container job, and this is load-bearing rather than
+    # a default left alone. tests/identity/corporate-unreachable.spec.ts shells
+    # out to `docker compose stop id` from inside the test process to prove an
+    # unreachable authority reports differently from a rejected credential, and
+    # global-teardown.ts runs `docker compose down` the same way. Both need the
+    # Docker CLI on PATH for the job's own shell, talking to a daemon that can
+    # publish ports on localhost. ubuntu-latest provides exactly that; a
+    # container job, or one reaching Docker only through a service container,
+    # does not.
+    runs-on: ubuntu-latest
+
+    env:
+      # Already true on every GitHub runner — set explicitly because four
+      # separate decisions key off it, and all four fail quietly rather than
+      # loudly if it is ever absent:
+      #
+      #   - global-teardown.ts stops the stack only when CI is set. Without it
+      #     the job ends with three containers still running.
+      #   - webServer.reuseExistingServer is `!CI`, so CI always gets a fresh
+      #     stack rather than whatever answers on port 4200.
+      #   - retries: 2 applies on CI only.
+      #   - forbidOnly fails the build on a stray test.only.
+      #
+      # Do not add an `env:` block to a step that clears the environment, and do
+      # not unset this.
+      CI: "true"
+
+    # Sized for a cold start, because a CI runner is always cold and this job is
+    # nothing like a unit-test job. The worst legitimate case adds up:
+    # webServer's own budget for `docker compose up --build` is 900s (15m),
+    # global-setup.ts's realm poll a further 180s (3m), then dependency install,
+    # the browser download, and the suite itself. That is ~21 minutes of
+    # permitted slowness before anything is actually wrong.
+    #
+    # So anything much under 25 would kill a legitimately slow cold build and
+    # report it in the checks UI as a test failure — the most expensive possible
+    # way to learn that the images took a while to build. 30 leaves margin over
+    # the sum without leaving a genuinely hung runner to burn the default
+    # 360-minute timeout.
+    #
+    # Measured end to end on a cold CI=1 run 2026-09-17: 12 passed in 1.1m once
+    # the stack was up. The margin here is for the build, not the specs.
+    timeout-minutes: 30
+
+    steps:
+      # A full-repository checkout, and it must stay one. docker-compose.yml's
+      # build contexts are `../../backend` and `../../frontend`, so the stack
+      # cannot be built from a checkout narrowed to e2e/. A sparse-checkout
+      # filter added here to "only fetch what this surface needs" would fail the
+      # webServer step, not a spec, and read as a timeout.
+      - uses: actions/checkout@v4
+
+      # 22 matches the frontend and infrastructure jobs. e2e/package.json has no
+      # engines field, so without a pin this runs on whatever the runner image
+      # happens to ship; @types/node is pinned to ^22 here, so 22 is the version
+      # the suite's types are written against.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          # defaults.run.working-directory applies only to `run` steps, never to
+          # `uses:` steps — this path is repository-root-relative.
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Chromium only, named explicitly. e2e/CONVENTIONS.md (Runtime & tooling)
+      # settles this: it matches Playwright's own CI-cost guidance to install
+      # only the browsers you need, and the Firefox and WebKit projects are left
+      # commented out in playwright.config.ts. A bare `npx playwright install`
+      # would download all three and only ever use one.
+      #
+      # --with-deps installs the system libraries Chromium needs on a bare
+      # Ubuntu runner. This is the same command e2e/README.md gives a developer.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The whole job, in one command, because playwright.config.ts already does
+      # the CI-shaped work:
+      #
+      #   - `webServer` runs `docker compose up --build` in
+      #     ../infrastructure/local and waits for the frontend to answer.
+      #   - `globalSetup` then polls the realm's OIDC discovery document until it
+      #     answers 200, and prints `Realm ready after …s.`
+      #   - `globalTeardown` runs `docker compose down` and prints `Stack
+      #     stopped.`
+      #
+      # Restating any of that as shell steps here would create a second,
+      # divergent way to stand the stack up — and the local one would be the
+      # tested one. In particular: do NOT add a sleep, a wait step, or a
+      # health-check loop before this. The readiness gate already exists in
+      # global-setup.ts, it polls a real signal rather than guessing, and
+      # e2e/CONVENTIONS.md rules arbitrary sleeps out of this surface entirely.
+      #
+      # No `--shard` and no `--workers` override, also deliberate.
+      # playwright.config.ts sets `fullyParallel: false` and `workers: 1`
+      # because corporate-unreachable.spec.ts stops the shared Keycloak
+      # mid-suite; a concurrent spec would see its own valid credential rejected
+      # and fail for a reason that has nothing to do with it. Sharding this job
+      # to make it faster would make sibling specs flake.
+      #
+      # One thing to watch that this workflow cannot assert: `retries: 2` is
+      # configured for CI, and it can hide the realm-readiness race — a run that
+      # fails once and passes on the retry reports green. If this job ever
+      # passes only on a retry, read the log rather than the badge. That is a
+      # finding, not a pass.
+      - name: Run the suite
+        run: npm test
+
+      # `always()`, not the implicit success-only condition, and this is the
+      # point of the step. A report that survives only a green run is missing
+      # exactly when someone needs it: the failure case is the one where you
+      # want the trace, the screenshot, and the error.
+      #
+      # Two paths, because the html reporter and the trace files land in
+      # different places (both git-ignored):
+      #
+      #   - playwright-report/  the HTML report itself
+      #   - test-results/       per-test output, including the traces that
+      #                         `trace: 'on-first-retry'` produces on any
+      #                         retried run
+      #
+      # if-no-files-found: warn rather than error, on purpose. If the job dies
+      # before the reporter writes — a webServer timeout on a broken image
+      # build, say — there is genuinely no report to collect, and turning that
+      # into a second red step would bury the real failure under a bogus one.
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          # Repository-root-relative, as for every `uses:` step.
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: warn
+          # Shorter than the 90-day default. A report is read in the hours after
+          # a red check, not months later, and this one carries browser traces
+          # and screenshots rather than a few KB of text.
+          retention-days: 14
