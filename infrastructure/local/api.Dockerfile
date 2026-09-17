@@ -31,10 +31,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish ./
 
-# Plain HTTP only, and nothing here may set an HTTPS port. Program.cs calls
-# UseHttpsRedirection() unconditionally; with no HTTPS port discoverable it logs a
-# warning and passes the request through, which is what makes plain HTTP work. Set
-# ASPNETCORE_HTTPS_PORTS and every proxied request starts answering 307 instead.
+# Plain HTTP only. ASPNETCORE_ENVIRONMENT=Development is load-bearing for more than
+# logging: Program.cs skips UseHttpsRedirection() in development, and registers the CORS
+# policy the `ng serve` inner loop needs, only there. Run this container as Production
+# and proxied requests start answering 307 while that loop starts failing preflight.
 ENV ASPNETCORE_ENVIRONMENT=Development \
     ASPNETCORE_HTTP_PORTS=8080
 
