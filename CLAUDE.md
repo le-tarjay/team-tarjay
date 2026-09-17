@@ -87,7 +87,9 @@ src/app/
 
 **Two distinct service shapes in `core/`:**
 
-1. **Backend-facing** (`auth`, `buyer`, `payment`, `product`, `sales`): each has an `I<Feature>Service` interface, a real service class that throws `'not configured yet'`, an `InjectionToken` in `core/tokens.ts`, and a `Mock*Service` in `mocks/`. Components inject **the token** (`inject(PRODUCT_SERVICE)`), never the concrete class. The mock is wired to the token in `app.config.ts` **only until that feature's real backend endpoints exist** — once real, `app.config.ts` swaps to the real service class for good, and the mock lives on only as a test double in that feature's own spec files (see `frontend/CONVENTIONS.md`). There is no demo/offline mode that keeps a mock wired into a real running app.
+1. **Backend-facing** (`auth`, `buyer`, `payment`, `product`, `sales`): each has an `I<Feature>Service` interface, an `InjectionToken` in `core/tokens.ts`, and a `Mock*Service` in `mocks/`. Components inject **the token** (`inject(PRODUCT_SERVICE)`), never the concrete class. The mock is wired to the token in `app.config.ts` **only until that feature's real backend endpoints exist** — once real, `app.config.ts` swaps to the real service for good, and the mock lives on only as a test double in that feature's own spec files (see `frontend/CONVENTIONS.md`). There is no demo/offline mode that keeps a mock wired into a real running app.
+
+   **`auth` has already made that trip.** `app.config.ts` provides the real `AuthService`, which posts to the sign-in endpoint and resolves the employee's role, department, and job function for the session. Note `useExisting`, not `useClass`: the service is `providedIn: 'root'` and holds the signed-in employee, so `useClass` would create a second instance and therefore a second, silently divergent copy of that state. `buyer`, `payment`, `product` and `sales` are still mock-wired, and their real classes still throw `'not configured yet'`.
 
 2. **Local UI state** (`SaleService`): plain `@Injectable({providedIn: 'root'})` with signals and computed — no interface, no token, no mock. Inject the concrete class directly. Don't manufacture an interface/token for a store that does no I/O.
 
@@ -113,11 +115,12 @@ Clean Architecture with one solution (`Team-Targét-Backend.sln`) at `backend/`.
 src/
   Tarjay.Team.Api/           # HTTP only: controllers, DI wiring, Program.cs
   Tarjay.Team.Domain/        # entities, interfaces, exceptions — zero framework references
-  Tarjay.Team.Application/   # does not exist yet — create only when first use case needs it
-  Tarjay.Team.Infrastructure/ # does not exist yet — create when a real external dependency needs it (e.g. the auth provider client), not for persistence: there is no real database, ever (see backend/CONVENTIONS.md), so in-memory stores stay where they are today
+  Tarjay.Team.Infrastructure/ # real external dependencies — today the Keycloak identity client. Not for persistence: there is no real database, ever (see backend/CONVENTIONS.md), so in-memory stores stay where they are
+  Tarjay.Team.Application/   # does not exist yet — create only when a use case needs to coordinate more than one domain interface
 tests/
-  Tarjay.Team.Api.IntegrationTests/   # WebApplicationFactory<Program>
-  Tarjay.Team.Domain.UnitTests/       # xUnit + Moq
+  Tarjay.Team.Api.IntegrationTests/     # WebApplicationFactory<Program>
+  Tarjay.Team.Domain.UnitTests/         # xUnit + Moq
+  Tarjay.Team.Infrastructure.UnitTests/ # xUnit, stubbed at the HTTP boundary
 ```
 
 **Key rules:**
@@ -126,11 +129,11 @@ tests/
 - DI registration: one `internal static class …ServiceCollectionExtensions` per concern in `Api/DependencyInjection/`.
 - Data access consumers depend on an interface (`IContactStore`-style), never a concrete store.
 - Use C# primary constructors for classes that only assign injected dependencies.
-- `Application` and `Infrastructure` are not created yet — do not create them speculatively.
+- Domain exceptions are thrown from `Domain` and mapped to status codes by an `IExceptionHandler`, never translated by hand in a controller.
+- `Infrastructure` now exists — the Keycloak identity client was the first real external dependency to need it. `Application` still does not: do not create it speculatively.
 
 **Known gaps (do not copy as patterns):**
-- No global exception handler (`IExceptionHandler`, `ProblemDetails` middleware) — controllers should translate domain exceptions to HTTP status codes manually until this is added.
-- Auth is scaffolded in test factory but not configured in `Program.cs` — do not add `[Authorize]` until real auth is wired end-to-end. The destination is decided, not open: a real external identity provider (Keycloak), self-contained in local docker-compose (see `backend/CONVENTIONS.md`'s House opinions) — this isn't faked the way data-serving logic is.
+- **Sign-in is real and works end to end**: `POST /v1/employees/sign-in` resolves an employee against Keycloak, which runs in the local docker-compose stack at `infrastructure/local/`. But `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` — nothing validates a bearer token on any subsequent request, and the JWT setup in the integration-test factory is test-only scaffolding. **Do not add `[Authorize]` until that is wired.**
 - `Tarjay.Team.Domain/Contact/` is disposable demo code (originally scoped for a Temporal demo that was never built). Its low-level syntax (file-scoped namespaces, XML doc comments) is real style; its `= null!` properties are the pattern to move away from.
 - No backend `.editorconfig` exists — 4-space indent for `.cs` is canonical but enforced by convention only. Add one when touching the backend config.
 
