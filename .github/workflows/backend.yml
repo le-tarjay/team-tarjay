@@ -26,7 +26,104 @@ defaults:
 
 jobs:
   test:
-    name: Lint, type-check, and test
+    # Renamed from "Lint, type-check, and test". Both of those happen, but
+    # neither is a step of its own and inventing one would misdescribe the job:
+    #
+    #   - Type-checking is the C# compiler, so `dotnet build` is the type check.
+    #   - Linting is the analyzers. Directory.Build.props sets
+    #     EnableNETAnalyzers and EnforceCodeStyleInBuild, so CAxxxx/IDExxxx
+    #     rules run inside the build against backend/.editorconfig — but
+    #     TreatWarningsAsErrors is false, so they report without failing.
+    #
+    # That last part is deliberate (backend/CONVENTIONS.md, Runtime &
+    # framework: "fix analyzer warnings, don't suppress them, but a warning
+    # won't fail the build"). Do not flip TreatWarningsAsErrors or add a
+    # `dotnet format --verify-no-changes` gate here without reading LET-125's
+    # completion report first — a format gate fails today on 14 pre-existing
+    # sites, all of them false positives from a gap in the .editorconfig
+    # naming rules. That is a real decision with a prerequisite, not a flag.
+    name: Build and test
     runs-on: ubuntu-latest
+    env:
+      # Noise reduction, not hang guards — unlike the frontend job's
+      # NG_CLI_ANALYTICS, neither of these prompts or blocks. The first-run
+      # banner is just printed. Opting out of telemetry from CI is the point
+      # of the second one.
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    # Restore + build + test is ~30s of work locally and a few minutes on a
+    # cold NuGet cache. The suite needs no network of its own (verified: all
+    # 91 tests pass with outbound access blocked, because
+    # ApiWebApplicationFactory pins OIDC discovery to a static document rather
+    # than reaching Keycloak), so a job that runs long is a job that is stuck.
+    # The default job timeout is 360 minutes, which would burn a full CI
+    # budget before reporting that.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      # Directory.Build.props pins <TargetFramework>net10.0</TargetFramework>
+      # for every project, so the SDK major is not negotiable. Pinned here
+      # rather than inherited from the runner image: the LET-112 specialist
+      # found the .NET 10 SDK absent from its environment and asked for the CI
+      # image to be checked, and what ubuntu-latest preinstalls changes without
+      # notice. `10.0.x` tracks the latest 10.0 SDK, which keeps patches
+      # flowing while still naming the version explicitly — the same trade the
+      # frontend job makes with `node-version: "22"`. Verified against 10.0.401.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # setup-dotnet's own `cache: true` input is not usable here: it requires
+      # a packages.lock.json to key on, and this solution has none.
+      #
+      # Hashing the csproj files is sound in its place only because every
+      # PackageReference in this solution is an exact version — no floating
+      # `*` ranges — so the restore graph cannot change without one of these
+      # files changing. Directory.Build.props is in the key because it sets
+      # the target framework, which the graph depends on. If package
+      # versions ever start floating, this key goes stale silently and should
+      # become a real lock file instead.
+      #
+      # hashFiles patterns are repository-root-relative. defaults.run
+      # .working-directory applies only to `run` steps, never to `uses:`
+      # steps, so a `backend`-relative pattern here would match nothing and
+      # the cache would key on the empty string for every run.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('backend/**/*.csproj', 'backend/Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Restore, build, and test are three steps rather than a bare
+      # `dotnet test` so that a failure names which phase broke — a restore
+      # failure and a test failure want different responses, and one combined
+      # step makes them look alike in the checks UI.
+      #
+      # None of the three names the solution file. There is exactly one .sln
+      # in backend/, so the SDK discovers it, and leaving it implicit avoids
+      # threading the non-ASCII filename Team-Targét-Backend.sln through YAML
+      # and the shell. Verified that discovery resolves it.
+      - name: Restore
+        run: dotnet restore
+
+      # Release is what a build of this surface would actually ship, so it is
+      # what CI should be type-checking and running analyzers over.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # Runs the whole solution, which is both of this surface's test levels
+      # together — there is no flag that separates them (backend/CONVENTIONS.md,
+      # Test levels). All three test projects must appear in the log:
+      # Domain.UnitTests, Infrastructure.UnitTests, and Api.IntegrationTests.
+      # The last one was silently dead repository-wide until LET-112 gave it a
+      # ProjectReference to Tarjay.Team.Api; before that WebApplicationFactory
+      # bound to the test platform's own Program and every test in it failed.
+      # A project that stops being discovered still reports success here, so
+      # the per-assembly result lines are the thing to check, not the job's
+      # exit status alone.
+      - name: Test
+        run: dotnet test --configuration Release --no-build
