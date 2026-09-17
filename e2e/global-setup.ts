@@ -72,10 +72,19 @@ export default async function waitForRealmImport(): Promise<void> {
 
   // A timeout here is a real failure, not something a retry papers over: every
   // sign-in in the suite would be rejected as an invalid credential.
+  //
+  // Two very different causes look identical from here, so the message names
+  // both rather than picking one. An earlier version asserted "the stack's
+  // containers were up", which it never checked — and the first time it fired,
+  // they were not: an `ng serve` left running had satisfied `webServer` on the
+  // frontend's port, so the stack was never started at all.
   throw new Error(
     `The identity provider's realm was not ready within ${READY_TIMEOUT_MS / 1_000}s ` +
-      `(${lastFailure}). The stack's containers were up — check the \`id\` service's ` +
-      `logs for a realm import failure: \`docker compose -f ` +
-      `../infrastructure/local/docker-compose.yml logs id\`.`,
+      `(${lastFailure}).\n\n` +
+      `Check which of these it is, from ../infrastructure/local:\n` +
+      `  1. The stack never started. \`reuseExistingServer\` silently reuses whatever ` +
+      `already answers on the frontend's port — including an \`ng serve\` you forgot ` +
+      `was running. Run \`docker compose ps\`.\n` +
+      `  2. The stack is up but the realm import failed. Run \`docker compose logs id\`.`,
   );
 }

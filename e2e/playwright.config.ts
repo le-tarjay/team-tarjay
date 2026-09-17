@@ -17,14 +17,25 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
+  /*
+   * Not parallel, and not an oversight. Every spec drives one shared stack with
+   * one Keycloak, and `tests/identity/corporate-unreachable.spec.ts`
+   * deliberately stops that Keycloak to prove the API reports an unreachable
+   * authority differently from a rejected credential. Run concurrently, a
+   * sibling spec would see its own valid credential rejected and fail for a
+   * reason that has nothing to do with it.
+   *
+   * Revisit if the stack ever becomes isolatable per worker. Until then the
+   * whole suite runs well inside two minutes, and correctness is worth more
+   * than the seconds.
+   */
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  /* One worker everywhere, for the reason given under fullyParallel above. */
+  workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
 
