@@ -15,13 +15,6 @@ namespace Tarjay.Team.Api.IntegrationTests;
 // run time looking for a deps file the app never produced.
 public class ApiWebApplicationFactory : WebApplicationFactory<Program>
 {
-    public ApiWebApplicationFactory()
-    {
-        // Same local-development posture as deploy/docker-compose.yml: authentication is still
-        // required (a bearer token must be present), signature verification is skipped.
-        Environment.SetEnvironmentVariable("XXXX", "false");
-    }
-
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);

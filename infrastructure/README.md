@@ -1,18 +1,150 @@
 # infrastructure
 
-The AWS infrastructure for Team Targét, defined in Python with
-[CDK Terrain](https://cdktn.io/docs) (CDKTN).
+Runtime provisioning for Team Targét. Two things live here, and they are unrelated to
+each other beyond both being this surface's job:
 
-This is a base scaffold, not a finished deployment. One stack exists today:
+1. **[Local runtime](#local-runtime)** — a `docker-compose` stack running the whole
+   application (frontend, API, identity provider) on a developer's machine.
+2. **AWS infrastructure**, defined in Python with
+   [CDK Terrain](https://cdktn.io/docs) (CDKTN) — everything from [Design](#design)
+   onward.
+
+The AWS side is a base scaffold, not a finished deployment. One stack exists today:
 
 | Stack | State key | What it holds |
 |---|---|---|
 | `network` | `network.tfstate` | VPC, internet gateway, two public subnets, route table |
 
-Everything this application needs to run (API hosting, a database, frontend hosting, and
+Everything this application needs to run **on AWS** (API hosting, frontend hosting, and
 whatever else `backend/` and `frontend/` end up needing) is **not yet decided** and is not
 built here speculatively. Add it as its own stack, following the pattern `network`
-establishes, once there's a real decision to encode.
+establishes, once there's a real decision to encode. The local runtime below is a
+separate concern and does not imply anything about the deployed shape.
+
+## Local runtime
+
+The whole application, on your own machine, in one command. Everything it needs is in
+[`local/`](local).
+
+```bash
+cd infrastructure/local
+docker compose up --build      # start (first run builds the images)
+docker compose down            # stop, and discard all state
+```
+
+Requires Docker with Compose v2. The first build compiles the Angular bundle and
+publishes the API, so expect a few minutes; later starts are fast.
+
+### What serves what
+
+| URL | Service | What it is |
+|---|---|---|
+| http://localhost:4200 | `web` | The app. Angular, **production-built**, served by nginx. Start here. |
+| http://localhost:4200/v1/* | `web` → `api` | The API, proxied. This is what makes the stack same-origin, so the browser never needs CORS. |
+| http://localhost:5080 | `api` | The API directly. Published for the `ng serve` inner loop and for `curl`; 8080 is already Keycloak's. |
+| http://localhost:8080 | `id` | Keycloak. The authority `backend/appsettings.json` already expects — not a free choice. |
+
+**Admin console:** http://localhost:8080 → *Administration Console*, `admin` / `admin`.
+Local throwaway credentials; no employee signs in with them. The seeded realm is
+`team-targe` — pick it from the realm selector, top left.
+
+### Readiness
+
+Nothing in the stack blocks on Keycloak being up: the API calls it per sign-in request,
+not at boot. The stack is ready to sign into once this answers:
+
+```bash
+curl -fsS http://localhost:8080/realms/team-targe/.well-known/openid-configuration >/dev/null && echo ready
+```
+
+That URL is the right thing for a test harness to poll, rather than a fixed sleep.
+
+### Signing in
+
+Employee ID is the username, PIN is the password. One employee per role, plus a
+Customer Support case, so every branch of the frontend's role-based navigation is
+reachable with a real credential:
+
+| Employee ID | PIN | Name | Role | Department | Job function |
+|---|---|---|---|---|---|
+| `10041` | `4417` | Dana Okafor | Associate | Grocery | Stocking |
+| `10042` | `5528` | Sam Rivera | DepartmentManager | Grocery | Stocking |
+| `10043` | `6639` | Alex Mercer | StoreManager | Store Operations | Store Management |
+| `10044` | `7741` | Priya Raman | ReceivingAssociate | Receiving | Receiving |
+| `10045` | `8852` | Chris Bell | Associate | Grocery | Customer Support |
+
+A wrong PIN is rejected by Keycloak, which is the case the API turns into its own
+invalid-credentials response. Brute-force protection is deliberately off, so repeating
+that test does not lock an employee out and break the next run.
+
+### The realm is a file, not a configuration session
+
+[`local/keycloak/team-targe-realm.json`](local/keycloak/team-targe-realm.json) is
+imported at container start (`--import-realm`). Keycloak's dev mode keeps its store
+inside the container and **nothing mounts a volume for it**, so `docker compose down`
+discards it and the next start re-imports from scratch. The realm is therefore identical
+on every run.
+
+The practical consequence: **do not configure this realm through the admin console.**
+Anything clicked there is gone at the next teardown. Change the export and restart.
+
+Three settings in it are load-bearing and easy to lose:
+
+- **The three custom claims each need a protocol mapper with *Add to userinfo* on.** The
+  API reads identity from `/userinfo`, and a user-attribute mapper does not reach
+  `/userinfo` by default. Without it the credential check succeeds and the sign-in then
+  fails as identity-incomplete — which reads like an API bug and is not one.
+- **`store_role`, `department`, and `job_function` are declared in the realm's user
+  profile.** Keycloak 24+ drops undeclared ("unmanaged") user attributes on import
+  silently.
+- **`email`, `firstName`, and `lastName` are declared optional, and every employee has
+  no required actions.** Employees have no email address; Keycloak's default profile
+  requires one, and an incomplete profile attaches a required action that makes the
+  password grant fail instead of returning a token.
+
+`tests/test_local_realm.py` asserts all of this, so a regression fails `pytest` rather
+than surfacing as a failed sign-in.
+
+### Layout
+
+```
+local/
+  docker-compose.yml              The stack: web, api, id
+  api.Dockerfile                  API image; build context is ../../backend
+  web.Dockerfile                  Frontend image, production build + nginx; context ../../frontend
+  *.Dockerfile.dockerignore       Per-Dockerfile excludes, so neither surface needs a file added to it
+  web/nginx.conf                  Serves the bundle; proxies /v1/* to api; SPA fallback
+  keycloak/team-targe-realm.json  The realm, imported at start
+```
+
+The Dockerfiles live here rather than in `backend/` and `frontend/` because runtime
+provisioning is this surface's job (see CONVENTIONS.md's Cross-surface impact); only
+their build contexts reach into those surfaces.
+
+### This is not the only way to run the app
+
+The composed stack is same-origin and is what the e2e suite drives. Running the frontend
+outside the stack with `ng serve`, against the composed API and Keycloak, is a separate
+loop that needs CORS on the API and a dev-server proxy — neither is here, and neither is
+this directory's business.
+
+### Gotchas
+
+- **Don't set an HTTPS port on the API.** `Program.cs` calls `UseHttpsRedirection()`
+  unconditionally; with no HTTPS port discoverable it logs a warning and passes requests
+  through, which is what makes plain HTTP work. Set `ASPNETCORE_HTTPS_PORTS` and every
+  proxied request starts answering 307.
+- **`Identity__Authority` is overridden in `docker-compose.yml`, on purpose.**
+  `appsettings.json` configures `http://localhost:8080`, which is right on a developer's
+  machine and wrong inside a container, where `localhost:8080` is the API itself. The
+  realm and client id are deliberately *not* repeated in compose — they are correct in
+  `appsettings.json`, and duplicating them would let compose silently override a real
+  change to it.
+- **Base images are pinned** (`keycloak:26.0`, `dotnet/sdk:10.0`, `dotnet/aspnet:10.0`).
+  The API targets `net10.0`, and a floating tag turns that into a restore error that
+  reads like a code problem.
+- **Ports 4200 and 8080 are not free choices.** 4200 keeps `e2e/playwright.config.ts`'s
+  `baseURL` valid; 8080 is the authority `appsettings.json` configures.
 
 ## Design
 
@@ -99,9 +231,13 @@ cdktf.json               Project config; the context block is all the settings
 models/                  Typed configuration and stack outputs, with from-context factories
 infra_constructs/        Reusable pieces. Named infra_constructs, not constructs -- see Design
 stacks/                  tarjay_stack.py (base) plus network.py
+local/                   The docker-compose runtime -- see Local runtime. Nothing to do with
+                         CDKTN or AWS; it is the other half of this surface's job.
 tests/                   pytest; construct tests synth a real TerraformStack and assert on
                          the JSON via Testing.synth(stack) -- not Testing.synth_scope(fn), which
                          doesn't cross the Python/jsii boundary. See tests/test_network_vpc.py.
+                         test_local_realm.py and test_local_stack.py assert on local/ instead:
+                         data files whose correctness is otherwise invisible until a sign-in fails.
 ```
 
 ## Known gaps
@@ -112,7 +248,13 @@ Honest about what this does not do yet.
   no CI/CD wiring — none of it is decided yet, let alone built. `network` exists because a
   VPC is the one piece almost any AWS deployment needs first, not because the rest is out
   of scope.
-- **No CI.** Nothing runs `cdktn synth`, `pytest`, `ruff`, or `mypy` automatically yet.
+- **The local runtime is local only.** `local/` runs the stack on a developer's machine.
+  There is no AWS-deployed equivalent: no Keycloak stack, no container registry, no
+  compute to run these images, and no secret management for a deployed environment. The
+  local compose file is not a template for any of them, and nothing in it encodes a
+  decision about the deployed shape.
+- **No CI.** Nothing runs `cdktn synth`, `pytest`, `ruff`, or `mypy` automatically yet —
+  including the `local/` tests added alongside the local runtime.
 - **The state bucket doesn't exist.** `state-bucket-name` in `cdktf.json` is a placeholder;
   `cdktn deploy` will fail until a real, versioned bucket exists and the value is filled in.
 - **One environment.** Nothing in the code assumes a single environment; only `cdktf.json`

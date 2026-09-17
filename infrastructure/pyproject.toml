@@ -22,6 +22,7 @@ build-backend = "poetry.core.masonry.api"
 pytest = "^9.1.1"
 ruff = "^0.16.4"
 mypy = "^2.3.1"
+pyyaml = "^6.0.3"
 
 [tool.ruff]
 line-length = 120
@@ -51,6 +52,18 @@ disallow_subclassing_any = false
 [[tool.mypy.overrides]]
 module = ["cdktn.*", "cdktn_provider_aws.*", "jsii.*", "constructs.*", "publication.*"]
 follow_imports = "skip"
+ignore_missing_imports = true
+
+# PyYAML ships no py.typed marker, so strict mode cannot resolve `import yaml`.
+# The usual answer is the separate `types-PyYAML` stubs package, but CONVENTIONS.md's
+# Composition and dependencies section makes every package an architect decision, and
+# the approval on 2026-09-16 covered PyYAML alone. This override stays inside that
+# approval. The cost is small and bounded: `yaml.safe_load` returns `Any` either way,
+# and tests/test_local_stack.py casts it to a concrete type at the single call site, so
+# nothing downstream of the boundary goes unchecked. Swap this for `types-PyYAML` if
+# that package is ever approved.
+[[tool.mypy.overrides]]
+module = ["yaml"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

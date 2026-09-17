@@ -1,0 +1,283 @@
+{
+  "realm": "team-targe",
+  "displayName": "Team Targét",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "verifyEmail": false,
+  "editUsernameAllowed": false,
+  "rememberMe": false,
+  "bruteForceProtected": false,
+  "permanentLockout": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "requiredActions": [
+    {
+      "alias": "VERIFY_PROFILE",
+      "name": "Verify Profile",
+      "providerId": "VERIFY_PROFILE",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 90,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PROFILE",
+      "name": "Update Profile",
+      "providerId": "UPDATE_PROFILE",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 40,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PASSWORD",
+      "name": "Update Password",
+      "providerId": "UPDATE_PASSWORD",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 30,
+      "config": {}
+    },
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 10,
+      "config": {}
+    },
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify Email",
+      "providerId": "VERIFY_EMAIL",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 50,
+      "config": {}
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "team-targe-store",
+      "name": "Le Targét store",
+      "description": "The point-of-sale API, exchanging an Employee ID and PIN for an identity.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:4200/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "protocolMappers": [
+        {
+          "name": "store role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "store_role",
+            "claim.name": "store_role",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "department",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "department",
+            "claim.name": "department",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "job function",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "job_function",
+            "claim.name": "job_function",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "10041",
+      "enabled": true,
+      "firstName": "Dana",
+      "lastName": "Okafor",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "Associate"
+        ],
+        "department": [
+          "Grocery"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "4417",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10042",
+      "enabled": true,
+      "firstName": "Sam",
+      "lastName": "Rivera",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "DepartmentManager"
+        ],
+        "department": [
+          "Grocery"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "5528",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10043",
+      "enabled": true,
+      "firstName": "Alex",
+      "lastName": "Mercer",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "StoreManager"
+        ],
+        "department": [
+          "Store Operations"
+        ],
+        "job_function": [
+          "Store Management"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "6639",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10044",
+      "enabled": true,
+      "firstName": "Priya",
+      "lastName": "Raman",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "ReceivingAssociate"
+        ],
+        "department": [
+          "Receiving"
+        ],
+        "job_function": [
+          "Receiving"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "7741",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10045",
+      "enabled": true,
+      "firstName": "Chris",
+      "lastName": "Bell",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "Associate"
+        ],
+        "department": [
+          "Grocery"
+        ],
+        "job_function": [
+          "Customer Support"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "8852",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"store_role\",\"displayName\":\"Store role\",\"group\":\"employee\",\"validations\":{\"options\":{\"options\":[\"Associate\",\"DepartmentManager\",\"StoreManager\",\"ReceivingAssociate\"]}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"required\":{\"roles\":[\"user\"]},\"multivalued\":false},{\"name\":\"department\",\"displayName\":\"Department\",\"group\":\"employee\",\"validations\":{\"length\":{\"min\":1,\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"required\":{\"roles\":[\"user\"]},\"multivalued\":false},{\"name\":\"job_function\",\"displayName\":\"Job function\",\"group\":\"employee\",\"validations\":{\"length\":{\"min\":1,\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"required\":{\"roles\":[\"user\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"employee\",\"displayHeader\":\"Employee record\",\"displayDescription\":\"Role, department, and job function as the store holds them\"}],\"unmanagedAttributePolicy\":\"ENABLED\"}"
+          ]
+        }
+      }
+    ]
+  }
+}
