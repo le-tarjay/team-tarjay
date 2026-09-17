@@ -26,7 +26,60 @@ defaults:
 
 jobs:
   test:
-    name: Lint, type-check, and test
+    # Renamed from "Lint, type-check, and test": there is no lint step because
+    # the surface has no lint script. package.json defines only ng/start/build/
+    # watch/test; the inline Prettier config is never invoked and there is no
+    # ESLint setup at all. Adding one is its own decision with its own rules,
+    # so the job is named for what it actually does. Type-checking is real but
+    # not a separate step — `ng build` type-checks app sources via
+    # tsconfig.app.json, and `ng test` type-checks the specs via
+    # tsconfig.spec.json.
+    name: Build and test
     runs-on: ubuntu-latest
+    env:
+      # The Angular CLI asks for analytics consent on first run and blocks on
+      # the answer. GitHub Actions sets CI=true, which suppresses the prompt,
+      # so this is belt-and-braces — but the prompt is a silent hang rather
+      # than a failure, and it is cheaper to be explicit than to depend on an
+      # implicit runner variable for it.
+      NG_CLI_ANALYTICS: "false"
+    # The suite is ~1 min of work. A runner that hangs rather than exiting is
+    # the failure mode this job most needs to fail fast on, and the default
+    # 360-minute job timeout would burn a full CI budget before reporting it.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      # Angular 20 requires node ^20.19.0 || ^22.12.0 || >=24.0.0 (the engines
+      # field on @angular/core, @angular/cli and @angular/build). package.json
+      # has no engines field of its own, so the version is pinned here rather
+      # than inherited from whatever the runner image happens to ship.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          # defaults.run.working-directory does not apply to action steps, only
+          # to `run` steps — this path is relative to the repository root.
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Builds the production configuration, which carries the bundle budgets.
+      # The initial bundle is over its 500 kB warning budget (571 kB today) and
+      # has been since before this epic — see LET-115. It is a warning, not an
+      # error, so the build exits 0. Do not promote warnings to errors here
+      # without dealing with the budget first, or every unrelated pull request
+      # goes red for a reason that has nothing to do with the change under test.
+      - name: Build
+        run: npm run build
+
+      # --watch=false is explicit on purpose. The unit-test builder's watch
+      # option "defaults to `true` in TTY environments and `false` otherwise",
+      # so this would probably terminate on its own — but a suite that silently
+      # starts watching never exits, and the job then reads as an
+      # infrastructure timeout rather than a test failure. Not worth leaving to
+      # a heuristic.
+      - name: Run unit tests
+        run: npm test -- --watch=false
