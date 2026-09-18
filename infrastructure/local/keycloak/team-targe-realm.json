@@ -138,6 +138,22 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "team-targe-admin",
+      "name": "Le Targét store administration",
+      "description": "Service account the API authenticates as to terminate an employee's other sessions at sign-in. No employee ever signs in with this client.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-development-only-not-a-real-secret",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [],
+      "webOrigins": []
     }
   ],
   "users": [
@@ -265,6 +281,17 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "service-account-team-targe-admin",
+      "enabled": true,
+      "serviceAccountClientId": "team-targe-admin",
+      "requiredActions": [],
+      "clientRoles": {
+        "realm-management": [
+          "manage-users"
+        ]
+      }
     }
   ],
   "components": {

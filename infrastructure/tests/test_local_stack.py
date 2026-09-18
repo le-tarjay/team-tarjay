@@ -24,6 +24,7 @@ rule, a Keycloak volume that makes the realm survive a teardown, or an HTTPS por
 API are each a silent failure that reads as a bug somewhere else.
 """
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -47,6 +48,16 @@ EXPECTED_SERVICES = frozenset({"id", "api", "web"})
 # Where --import-realm looks, and the directory whose persistence would defeat it.
 REALM_IMPORT_TARGET = "/opt/keycloak/data/import/team-targe-realm.json"
 KEYCLOAK_DATA_DIR = "/opt/keycloak/data"
+
+# LET-129. The API authenticates as this client to terminate an employee's other sessions
+# at sign-in; the realm export declares it, and compose is where the API is told about it.
+ADMIN_CLIENT_ID = "team-targe-admin"
+ADMIN_CLIENT_ID_SETTING = "Identity__Admin__ClientId"
+ADMIN_CLIENT_SECRET_SETTING = "Identity__Admin__ClientSecret"
+
+# Keycloak's own bootstrap admin: the admin console's credential, and the one thing
+# LET-129 exists to stop the application from reaching for.
+BOOTSTRAP_ADMIN_SETTINGS = ("KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD")
 
 
 def _read(path: Path) -> str:
@@ -153,6 +164,18 @@ def compose() -> dict[str, Any]:
 @pytest.fixture(scope="module")
 def services(compose: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return cast(dict[str, dict[str, Any]], compose["services"])
+
+
+@pytest.fixture(scope="module")
+def realm() -> dict[str, Any]:
+    """The realm export, read here so the two files can be checked against each other.
+
+    tests/test_local_realm.py owns the realm's own invariants. What only this file can
+    see is the seam: compose hands the API a client id and secret, the realm declares
+    them, and nothing but an assertion spanning both notices when one side is edited.
+    """
+    with REALM_EXPORT.open(encoding="utf-8") as handle:
+        return cast(dict[str, Any], json.load(handle))
 
 
 class TestFilesExist:
@@ -303,6 +326,67 @@ class TestApiConfiguration:
     @pytest.mark.parametrize("setting", ["ASPNETCORE_HTTPS_PORTS", "ASPNETCORE_URLS"])
     def test_no_https_port_is_configured_in_the_api_dockerfile(self, setting: str) -> None:
         assert setting not in _effective(API_DOCKERFILE)
+
+
+class TestAdminSessionCredentials:
+    """How the API is told about LET-129's confidential client, and what it is not told.
+
+    The realm half of this lives in tests/test_local_realm.py. These assertions are about
+    the wiring: that the credentials reach the API as configuration, that they reach the
+    API and nothing else, and that the bootstrap admin credential goes nowhere near it.
+    """
+
+    def test_the_api_is_given_the_admin_client_id(self, services: dict[str, Any]) -> None:
+        assert _environment(services["api"])[ADMIN_CLIENT_ID_SETTING] == ADMIN_CLIENT_ID
+
+    def test_the_api_is_given_a_non_empty_admin_client_secret(self, services: dict[str, Any]) -> None:
+        # `_environment` reports a key holding nothing as present, so this asserts the
+        # value rather than the key: `Identity__Admin__ClientSecret:` with nothing after
+        # it imports cleanly, passes a presence check, and fails the grant at runtime.
+        secret = _environment(services["api"])[ADMIN_CLIENT_SECRET_SETTING]
+        assert secret is not None and secret.strip() != ""
+
+    @pytest.mark.parametrize("setting", [ADMIN_CLIENT_ID_SETTING, ADMIN_CLIENT_SECRET_SETTING])
+    def test_only_the_api_is_given_the_admin_credentials(self, services: dict[str, Any], setting: str) -> None:
+        # The API is the only service that calls Keycloak's Admin API. On `web` or `id`
+        # these would be inert, and inert-but-present is how a credential ends up
+        # somewhere nobody remembers putting it.
+        carrying = [name for name, service in services.items() if setting in _environment(service)]
+        assert carrying == ["api"]
+
+    def test_the_secret_compose_passes_is_the_secret_the_realm_declares(
+        self, services: dict[str, Any], realm: dict[str, Any]
+    ) -> None:
+        # Two files, one credential. Editing either alone leaves a stack that starts
+        # cleanly and then fails the client-credentials grant with a 401 at the first
+        # sign-in -- which reads as a code fault in whatever made the call.
+        clients = cast(list[dict[str, Any]], realm["clients"])
+        declared = next(c for c in clients if c["clientId"] == ADMIN_CLIENT_ID)
+        assert _environment(services["api"])[ADMIN_CLIENT_SECRET_SETTING] == declared["secret"]
+
+    def test_the_client_id_compose_passes_is_a_client_the_realm_declares(
+        self, services: dict[str, Any], realm: dict[str, Any]
+    ) -> None:
+        declared = {cast(str, c["clientId"]) for c in cast(list[dict[str, Any]], realm["clients"])}
+        assert _environment(services["api"])[ADMIN_CLIENT_ID_SETTING] in declared
+
+    @pytest.mark.parametrize("setting", BOOTSTRAP_ADMIN_SETTINGS)
+    def test_the_bootstrap_admin_credential_stays_on_keycloak_alone(
+        self, services: dict[str, Any], setting: str
+    ) -> None:
+        # AC 4. That credential is for the admin console, and the whole point of adding a
+        # service account is that the application never authenticates with it.
+        carrying = [name for name, service in services.items() if setting in _environment(service)]
+        assert carrying == ["id"]
+
+    def test_no_api_setting_carries_the_bootstrap_admin_password(self, services: dict[str, Any]) -> None:
+        # Stated by value as well as by key, because the failure this guards against is
+        # the bootstrap password copied into an Identity__* setting under a different
+        # name, which the key-anchored assertion above would not see.
+        bootstrap = _environment(services["id"])["KC_BOOTSTRAP_ADMIN_PASSWORD"]
+        assert bootstrap is not None
+        offending = [key for key, value in _environment(services["api"]).items() if value == bootstrap]
+        assert offending == []
 
 
 class TestBuildContexts:
