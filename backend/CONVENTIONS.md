@@ -7,12 +7,19 @@
 
 ## Status
 
-This surface is early — the only real code today is the default ASP.NET
-`WeatherForecastController` template and a `Contact` sample module. The
-`Contact` module's own comments describe it as a demo for Temporal
-orchestration ("import flows", "activities", idempotent upserts) — **that
-framing is not real**. No Temporal package, worker, or docker-compose exists
-in this repo. Treat `Tarjay.Team.Domain/Contact/*` as disposable sample code,
+Two kinds of code live here and they are not equivalent. The **Identity
+module is real**: `Api/Controllers/EmployeesController.cs`,
+`Api/Models/SignIn*`, `Api/Validation/SignInRequestValidator.cs`,
+`Domain/Identity/*`, and `Infrastructure/Identity/Keycloak*` were built
+against these conventions, carry unit and integration tests, and are
+precedent. The leftovers are not: the default ASP.NET
+`WeatherForecastController` template, and a `Contact` sample module whose own
+comments describe it as a demo for Temporal orchestration ("import flows",
+"activities", idempotent upserts) — **that framing is not real**. No Temporal
+package or worker exists in this repo, and no compose service runs one.
+(A compose file does exist, at `infrastructure/local/docker-compose.yml` —
+it runs Keycloak, the API, and the frontend, and has nothing to do with
+Temporal.) Treat `Tarjay.Team.Domain/Contact/*` as disposable sample code,
 not precedent, until it's replaced. Its low-level *syntax* (file-scoped
 namespaces, XML doc comments) does reflect the real house style below —
 except its indentation and its `= null!;` properties, both called out as
@@ -22,8 +29,9 @@ Persistence and auth are now decided, not open (see House opinions): there
 is no real database, ever — every endpoint's data comes from an in-memory
 collection or a hardcoded response, decided per piece as it's built. Auth is
 real, not faked the way data-serving logic is — a real external identity
-provider (Keycloak), self-contained in local docker-compose, gates login
-end-to-end, per "ADR: Store Backend System Design" §4 ("corporate is the sole
+provider (Keycloak), self-contained in local docker-compose
+(`infrastructure/local/docker-compose.yml`), gates login end-to-end, per
+"ADR: Store Backend System Design" §4 ("corporate is the sole
 identity/credential authority"), in Linear.
 
 ## Runtime & framework
@@ -136,22 +144,23 @@ backend/
       DependencyInjection/       # one ServiceCollectionExtensions per concern
       Models/                    # request/response DTOs, API-shape only
     Tarjay.Team.Application/     # use cases / orchestration (create when the first one exists)
-    Tarjay.Team.Infrastructure/  # persistence, external clients (create when a real store exists)
+    Tarjay.Team.Infrastructure/  # persistence, external clients — exists (Keycloak identity client)
     Tarjay.Team.Domain/          # entities, domain interfaces, domain exceptions — no framework refs
       <Feature>/                 # one folder per aggregate/feature, not per type-kind
   tests/
     Tarjay.Team.Api.IntegrationTests/    # WebApplicationFactory<Program>, hits real DI graph
     Tarjay.Team.Domain.UnitTests/        # xUnit + Moq, one *.UnitTests project per src project
+    Tarjay.Team.Infrastructure.UnitTests/
 ```
 
-`Application` and `Infrastructure` don't exist yet — don't create them
-speculatively. Add `Tarjay.Team.Infrastructure` when the first real
-persistence implementation lands; add `Tarjay.Team.Application` when the
-first use case needs to coordinate more than one domain interface. Until
-then, simple singleton stores registered straight from `Domain` (as
-`InMemoryContactStore` does today) are fine. When `Infrastructure` does
-land with disposable resources (`DbContext`, `HttpClient`, connections),
-let DI own their lifetime via the standard `IDisposable`/`IAsyncDisposable`
+`Tarjay.Team.Infrastructure` exists — it was added for the Keycloak identity
+client, an external client rather than a persistence implementation.
+`Application` still doesn't exist; don't create it speculatively. Add
+`Tarjay.Team.Application` when the first use case needs to coordinate more
+than one domain interface. Simple singleton stores registered straight from
+`Domain` (as `InMemoryContactStore` does today) remain fine. Where
+`Infrastructure` holds disposable resources (`HttpClient`, connections), let
+DI own their lifetime via the standard `IDisposable`/`IAsyncDisposable`
 pattern — don't manually `new` one up and hold it in a singleton.
 
 `Domain` has zero framework package references — no ASP.NET, no EF Core, no
@@ -302,7 +311,9 @@ than assuming a shape, per `infrastructure/CONVENTIONS.md`'s own rules:
 - **A new external dependency this surface talks to** — the real auth
   provider decided in House opinions, above, is the concrete example today —
   usually means new infrastructure to stand it up, network/security-group
-  access to it, and secrets for it, none of which exists yet for Keycloak.
+  access to it, and secrets for it. For Keycloak the local runtime now exists
+  (`infrastructure/local/docker-compose.yml`, with a committed realm export);
+  deployed infrastructure, network access, and secrets for it still do not.
   This is exactly the kind of addition `../infrastructure/CONVENTIONS.md`'s
   Composition and dependencies section already gates ("adding a new
   Terraform provider or package is an architect decision, raise it as a
@@ -438,14 +449,18 @@ boundaries are, and what actually runs those images once pushed (see
 - **Auth is real, and is not on the tiering system data-serving logic uses.**
   Unlike persistence, auth is not something this project fakes — login routes
   through a real external identity provider (Keycloak), run as a
-  self-contained instance in local docker-compose. This matches
+  self-contained instance in local docker-compose
+  (`infrastructure/local/docker-compose.yml`). This matches
   "ADR: Store Backend System Design" §4's "corporate is the
   sole identity/credential authority" — Keycloak plays that role locally.
-  Today, `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` call and
-  `appsettings.json` has no `Identity` section (`ApiWebApplicationFactory`'s
-  JWT bearer setup is test-only scaffolding) — don't add `[Authorize]` or
-  assume a bearer token is present until that's wired up for real. The
-  destination is decided; the wiring itself isn't done yet.
+  Sign-in itself is wired end-to-end: `appsettings.json` carries the
+  `Identity` section, and `EmployeesController` resolves credentials through
+  `KeycloakEmployeeIdentityResolver`. What does not exist is a *session* —
+  sign-in returns an identity and no token, and `Program.cs` still has no
+  `AddAuthentication`/`AddJwtBearer` call (`ApiWebApplicationFactory`'s JWT
+  bearer setup is test-only scaffolding). Don't add `[Authorize]` or assume a
+  bearer token is present until that's wired up for real. LET-107 owns that
+  work; revisit this paragraph when it lands.
 - **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, XML
   doc comments (`<summary>`) on public types and members in `Domain` that
   aren't self-explanatory from their name. See Code style for indentation,
