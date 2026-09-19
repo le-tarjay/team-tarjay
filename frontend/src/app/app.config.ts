@@ -1,9 +1,10 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
+import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
 import {
   AUTH_SERVICE,
   BUYER_SERVICE,
@@ -20,7 +21,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient(),
+    provideHttpClient(withInterceptors([bearerTokenInterceptor])),
     {
       // `useExisting`, not `useClass`: AuthService is `providedIn: 'root'`, and
       // the signed-in employee is session state. A second instance would be a

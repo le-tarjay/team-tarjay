@@ -23,6 +23,9 @@ class StubAuthService implements IAuthService {
   readonly currentEmployee = this.employee.asReadonly();
   readonly isAuthenticated = computed(() => this.employee() !== null);
 
+  /** The shell reads identity, never the credential. */
+  readonly accessToken = signal<string | null>(null).asReadonly();
+
   login(): Observable<Employee> {
     return throwError(() => new Error('Not exercised by the app shell.'));
   }

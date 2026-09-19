@@ -14,6 +14,16 @@ export interface IAuthService {
   currentEmployee: Signal<Employee | null>;
   isAuthenticated: Signal<boolean>;
 
+  /**
+   * The credential outgoing requests are signed with, or `null` when nobody is
+   * signed in. On the interface because the HTTP interceptor reads it through
+   * `AUTH_SERVICE` like every other consumer. The refresh token deliberately is
+   * not: nothing outside `AuthService` renews a session, so widening the
+   * contract for it would oblige every implementer to carry a value no consumer
+   * of the token ever reads.
+   */
+  accessToken: Signal<string | null>;
+
   login(credentials: LoginCredentials): Observable<Employee>;
   logout(): void;
 }
@@ -59,10 +69,26 @@ interface SignInResponse {
   role: string;
   department: string;
   jobFunction: string;
+
+  /**
+   * Snake_case because that is the wire contract: the endpoint passes
+   * Keycloak's own artifacts through untouched and names them as Keycloak
+   * does, so a token read here and one read from a refresh against Keycloak
+   * directly are the same field under the same name.
+   */
+  access_token?: string;
+  refresh_token?: string;
 }
 
 interface SignInEnvelope {
   data: SignInResponse;
+}
+
+/** What one successful sign-in resolved to: who, plus what the session runs on. */
+interface ResolvedSession {
+  employee: Employee;
+  accessToken: string | null;
+  refreshToken: string | null;
 }
 
 @Injectable({
@@ -73,19 +99,45 @@ export class AuthService implements IAuthService {
 
   private readonly employee = signal<Employee | null>(null);
 
+  /**
+   * Memory only, on purpose — never `localStorage` or `sessionStorage`. These
+   * are shared terminals, and a credential written to disk outlives both the
+   * tab and the employee standing at it. The accepted cost is that a page
+   * refresh loses the session and returns the employee to Login; that matches
+   * how `employee` above has always behaved.
+   */
+  private readonly access = signal<string | null>(null);
+  private readonly refresh = signal<string | null>(null);
+
   readonly currentEmployee = this.employee.asReadonly();
   readonly isAuthenticated = computed(() => this.employee() !== null);
+  readonly accessToken = this.access.asReadonly();
+  readonly refreshToken = this.refresh.asReadonly();
 
   login(credentials: LoginCredentials): Observable<Employee> {
     return this.http.post<SignInEnvelope>(SIGN_IN_ENDPOINT, credentials).pipe(
-      map((envelope: SignInEnvelope | null) => toEmployee(envelope)),
-      tap((employee) => this.employee.set(employee)),
+      map((envelope: SignInEnvelope | null) => toResolvedSession(envelope)),
+      tap((session) => this.hold(session)),
+      map((session) => session.employee),
       catchError((error: unknown) => throwError(() => toUserFacingError(error))),
     );
   }
 
   logout(): void {
     this.employee.set(null);
+    this.access.set(null);
+    this.refresh.set(null);
+  }
+
+  /**
+   * One place, so a sign-in can never leave the session half-held: an identity
+   * this app can't use throws before any of this runs, and the tokens are
+   * dropped with it rather than outliving a failed sign-in.
+   */
+  private hold(session: ResolvedSession): void {
+    this.employee.set(session.employee);
+    this.access.set(session.accessToken);
+    this.refresh.set(session.refreshToken);
   }
 }
 
@@ -93,7 +145,7 @@ export class AuthService implements IAuthService {
  * Role and department are resolved once here and held for the session; a
  * corporate-side change takes effect at the employee's next sign-in.
  */
-function toEmployee(envelope: SignInEnvelope | null): Employee {
+function toResolvedSession(envelope: SignInEnvelope | null): ResolvedSession {
   const data = envelope?.data;
 
   if (!data || !isEmployeeRole(data.role)) {
@@ -101,12 +153,26 @@ function toEmployee(envelope: SignInEnvelope | null): Employee {
   }
 
   return {
-    id: data.employeeId,
-    name: data.name,
-    role: data.role,
-    department: data.department,
-    jobFunction: data.jobFunction,
+    employee: {
+      id: data.employeeId,
+      name: data.name,
+      role: data.role,
+      department: data.department,
+      jobFunction: data.jobFunction,
+    },
+    accessToken: toHeldToken(data.access_token),
+    refreshToken: toHeldToken(data.refresh_token),
   };
+}
+
+/**
+ * Held verbatim when there is anything to hold, and `null` otherwise, so that
+ * "signed in without a usable credential" reads the same here as "not signed
+ * in" does. Whether a held value is fit to put in a header is the
+ * interceptor's call, not this one's — see `bearer-token.interceptor.ts`.
+ */
+function toHeldToken(value: string | undefined): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function isEmployeeRole(value: string): value is EmployeeRole {

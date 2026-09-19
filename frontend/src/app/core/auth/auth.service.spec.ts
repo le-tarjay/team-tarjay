@@ -22,6 +22,14 @@ const SIGN_IN_URL = '/v1/employees/sign-in';
 
 const CREDENTIALS: LoginCredentials = { employeeId: '100482', pin: '8321' };
 
+/**
+ * The endpoint returns Keycloak's own artifacts under Keycloak's own names —
+ * see `SignInResponse` on the API side — so the fixture carries them the same
+ * way. Values are structurally plausible, not signed; nothing here verifies one.
+ */
+const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.c2lnbmF0dXJl';
+const REFRESH_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.cmVmcmVzaA';
+
 function signInEnvelope(overrides: Partial<Record<string, string>> = {}) {
   return {
     data: {
@@ -30,10 +38,16 @@ function signInEnvelope(overrides: Partial<Record<string, string>> = {}) {
       role: 'DepartmentManager',
       department: 'Grocery',
       jobFunction: 'Customer Support',
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
       ...overrides,
     },
     meta: {},
   };
+}
+
+function storedValues(storage: Storage): readonly string[] {
+  return Object.keys(storage).map((key) => storage.getItem(key) ?? '');
 }
 
 describe('AuthService', () => {
@@ -41,6 +55,10 @@ describe('AuthService', () => {
   let httpMock: HttpTestingController;
 
   beforeEach(() => {
+    // So that "nothing is in storage" can only mean this service put nothing there.
+    localStorage.clear();
+    sessionStorage.clear();
+
     TestBed.configureTestingModule({
       providers: [
         provideZonelessChangeDetection(),
@@ -61,6 +79,8 @@ describe('AuthService', () => {
     expect(service).toBeTruthy();
     expect(service.currentEmployee()).toBeNull();
     expect(service.isAuthenticated()).toBe(false);
+    expect(service.accessToken()).toBeNull();
+    expect(service.refreshToken()).toBeNull();
   });
 
   describe('login', () => {
@@ -272,6 +292,106 @@ describe('AuthService', () => {
     });
   });
 
+  describe('session tokens', () => {
+    it('holds the access and refresh tokens the endpoint returned', () => {
+      service.login(CREDENTIALS).subscribe();
+
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope());
+
+      expect(service.accessToken()).toBe(ACCESS_TOKEN);
+      expect(service.refreshToken()).toBe(REFRESH_TOKEN);
+    });
+
+    it('writes neither token to localStorage or sessionStorage', () => {
+      service.login(CREDENTIALS).subscribe();
+
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope());
+
+      expect(service.accessToken()).toBe(ACCESS_TOKEN);
+      expect(localStorage.length).toBe(0);
+      expect(sessionStorage.length).toBe(0);
+      expect(storedValues(localStorage)).not.toContain(ACCESS_TOKEN);
+      expect(storedValues(localStorage)).not.toContain(REFRESH_TOKEN);
+      expect(storedValues(sessionStorage)).not.toContain(ACCESS_TOKEN);
+      expect(storedValues(sessionStorage)).not.toContain(REFRESH_TOKEN);
+    });
+
+    /**
+     * A reload is a new application instance reading whatever survived it.
+     * Nothing did — which is the whole point of holding the session in
+     * signals — so a service built afresh starts signed out.
+     */
+    it('starts with no session when the app is rebuilt, as it is on a page refresh', () => {
+      service.login(CREDENTIALS).subscribe();
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope());
+      httpMock.verify();
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideZonelessChangeDetection(),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+        ],
+      });
+
+      const reloaded = TestBed.inject(AuthService);
+      httpMock = TestBed.inject(HttpTestingController);
+
+      expect(reloaded).not.toBe(service);
+      expect(reloaded.accessToken()).toBeNull();
+      expect(reloaded.refreshToken()).toBeNull();
+      expect(reloaded.currentEmployee()).toBeNull();
+      expect(reloaded.isAuthenticated()).toBe(false);
+    });
+
+    it('holds no token when the response carries none', () => {
+      const untokenized = signInEnvelope();
+      delete (untokenized.data as Partial<Record<string, string>>)['access_token'];
+      delete (untokenized.data as Partial<Record<string, string>>)['refresh_token'];
+
+      service.login(CREDENTIALS).subscribe();
+
+      httpMock.expectOne(SIGN_IN_URL).flush(untokenized);
+
+      expect(service.isAuthenticated()).toBe(true);
+      expect(service.accessToken()).toBeNull();
+      expect(service.refreshToken()).toBeNull();
+    });
+
+    it('holds no token when the response carries an empty one', () => {
+      service.login(CREDENTIALS).subscribe();
+
+      httpMock
+        .expectOne(SIGN_IN_URL)
+        .flush(signInEnvelope({ access_token: '', refresh_token: '' }));
+
+      expect(service.accessToken()).toBeNull();
+      expect(service.refreshToken()).toBeNull();
+    });
+
+    it('holds no token when the sign-in itself failed', () => {
+      service.login(CREDENTIALS).subscribe({ next: () => undefined, error: () => undefined });
+
+      httpMock
+        .expectOne(SIGN_IN_URL)
+        .flush(null, { status: 401, statusText: 'Unauthorized' });
+
+      expect(service.accessToken()).toBeNull();
+      expect(service.refreshToken()).toBeNull();
+    });
+
+    it('drops the tokens with the identity when the role is one this app does not know', () => {
+      service.login(CREDENTIALS).subscribe({ next: () => undefined, error: () => undefined });
+
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope({ role: 'RegionalDirector' }));
+
+      expect(service.currentEmployee()).toBeNull();
+      expect(service.accessToken()).toBeNull();
+      expect(service.refreshToken()).toBeNull();
+    });
+  });
+
   describe('logout', () => {
     it('clears currentEmployee and isAuthenticated', () => {
       service.login(CREDENTIALS).subscribe();
@@ -283,6 +403,18 @@ describe('AuthService', () => {
 
       expect(service.currentEmployee()).toBeNull();
       expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('clears both tokens', () => {
+      service.login(CREDENTIALS).subscribe();
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope());
+
+      expect(service.accessToken()).toBe(ACCESS_TOKEN);
+
+      service.logout();
+
+      expect(service.accessToken()).toBeNull();
+      expect(service.refreshToken()).toBeNull();
     });
   });
 });
