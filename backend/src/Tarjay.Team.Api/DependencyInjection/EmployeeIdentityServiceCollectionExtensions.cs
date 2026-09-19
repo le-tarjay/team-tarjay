@@ -28,6 +28,16 @@ internal static class EmployeeIdentityServiceCollectionExtensions
 
         services.Configure<KeycloakOptions>(configuration.GetSection(KeycloakOptions.SectionName));
 
+        // Its own client, not the resolver's: this one talks to the Admin API as the store's
+        // service account, and sharing a client with the employee-facing calls would put two
+        // unrelated credentials on one connection's worth of configuration.
+        services.AddHttpClient<IKeycloakSessionAdministrator, KeycloakSessionAdministrator>(
+            static (serviceProvider, httpClient) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                httpClient.Timeout = options.Timeout;
+            });
+
         // Registered against the interface, and with DI owning the HttpClient's lifetime rather
         // than a hand-rolled singleton holding one forever.
         services.AddHttpClient<IEmployeeIdentityResolver, KeycloakEmployeeIdentityResolver>(

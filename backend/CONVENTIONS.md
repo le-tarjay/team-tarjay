@@ -455,12 +455,15 @@ boundaries are, and what actually runs those images once pushed (see
   sole identity/credential authority" — Keycloak plays that role locally.
   Sign-in itself is wired end-to-end: `appsettings.json` carries the
   `Identity` section, and `EmployeesController` resolves credentials through
-  `KeycloakEmployeeIdentityResolver`. What does not exist is a *session* —
-  sign-in returns an identity and no token, and `Program.cs` still has no
-  `AddAuthentication`/`AddJwtBearer` call (`ApiWebApplicationFactory`'s JWT
-  bearer setup is test-only scaffolding). Don't add `[Authorize]` or assume a
-  bearer token is present until that's wired up for real. LET-107 owns that
-  work; revisit this paragraph when it lands.
+  `KeycloakEmployeeIdentityResolver`. Sign-in now returns Keycloak's own access
+  and refresh tokens, unmodified, and ends the employee's other sessions
+  through the Admin API before it answers (LET-130) — the store still mints no
+  session artifact of its own. What does not exist yet is anything *checking* a
+  token: `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` call
+  (`ApiWebApplicationFactory`'s JWT bearer setup is test-only scaffolding), so
+  nothing validates a bearer credential on any request. Don't add `[Authorize]`
+  or assume a bearer token is present until that's wired up for real. LET-107
+  owns that work; revisit this paragraph when it lands.
 - **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, XML
   doc comments (`<summary>`) on public types and members in `Domain` that
   aren't self-explanatory from their name. See Code style for indentation,
