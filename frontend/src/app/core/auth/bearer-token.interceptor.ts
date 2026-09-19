@@ -23,12 +23,42 @@ const ABSOLUTE_URL = /^[a-z][a-z0-9+.-]*:|^\/\//i;
 const HEADER_UNSAFE = /[^!-~]/;
 
 /**
- * Attaches the signed-in employee's access token to the store's own requests.
+ * Attaches the signed-in employee's access token to the store's own requests,
+ * as `Authorization: Bearer <access_token>`.
+ *
+ * Registered once, in `app.config.ts` via
+ * `provideHttpClient(withInterceptors([...]))`, so every `HttpClient` call in
+ * the app passes through here. No caller asks for the credential and no caller
+ * can forget it.
+ *
+ * It reads the token through `AUTH_SERVICE` rather than `AuthService`, like
+ * every other consumer, and it reads it on each request rather than caching
+ * it. The token lives in a signal that sign-in and sign-out both write, so
+ * reading per request is what makes the credential follow the session:
+ * signing out stops the next request being signed, with nothing to invalidate.
+ *
+ * **Three conditions send the request through unsigned**, each for its own
+ * reason, and each with a test of its own:
+ *
+ * 1. *No usable token* — nobody is signed in, or what is held could not go in
+ *    a header (see `usableBearerToken`). An unsigned request gets a clean 401
+ *    from the backend; a malformed header gets an ambiguous one.
+ * 2. *Not this origin* — the credential is scoped to the store's own API and
+ *    must not leak to a third party. Keycloak's token endpoint is the case
+ *    that matters: the refresh story will call it absolutely, and it
+ *    authenticates with the refresh token, not with this one.
+ * 3. *The caller set `Authorization` itself* — a caller that supplied its own
+ *    credential meant it. Silently overwriting it would make this interceptor
+ *    the thing breaking a call that looks correct at the call site.
  *
  * Shaped as one guarded clone feeding a single `next(...)` on purpose: the
  * story that distinguishes a terminated session (`invalid_grant`) from a
  * transport failure hangs its handling off that one call, and so extends this
- * rather than replacing it.
+ * rather than replacing it. Returning early with a second `next(...)` per
+ * guard would mean that story has to add its handling to each of them.
+ *
+ * The request is cloned rather than mutated because `HttpRequest` is
+ * immutable by contract; `clone({ setHeaders })` is how a header is added.
  */
 export const bearerTokenInterceptor: HttpInterceptorFn = (request, next) => {
   const token = usableBearerToken(inject(AUTH_SERVICE).accessToken());

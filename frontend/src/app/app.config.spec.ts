@@ -68,4 +68,44 @@ describe('appConfig', () => {
 
     httpMock.verify();
   });
+
+  /**
+   * The negative half of the test above, and at the same level: through the
+   * app's real provider list rather than a hand-registered interceptor. The
+   * interceptor's own spec proves it attaches nothing without a token; this
+   * proves the running app attaches nothing once the employee signs out, which
+   * is what would break if some later feature cached the credential anywhere
+   * between `AuthService` and the wire.
+   */
+  it('sends no credential through the running app once the employee signs out', () => {
+    const authService = TestBed.inject(AuthService);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    authService.login({ employeeId: '100482', pin: '8321' }).subscribe();
+    httpMock.expectOne(SIGN_IN_URL).flush({
+      data: {
+        employeeId: '100482',
+        name: 'Avery Brooks',
+        role: 'DepartmentManager',
+        department: 'Grocery',
+        jobFunction: 'Customer Support',
+        access_token: ACCESS_TOKEN,
+        refresh_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.cmVmcmVzaA',
+      },
+      meta: {},
+    });
+
+    authService.logout();
+
+    TestBed.inject(HttpClient).get('/v1/sales').subscribe({
+      next: () => undefined,
+      error: () => undefined,
+    });
+
+    const request = httpMock.expectOne('/v1/sales').request;
+
+    expect(request.headers.has(AUTHORIZATION_HEADER)).toBe(false);
+
+    httpMock.verify();
+  });
 });

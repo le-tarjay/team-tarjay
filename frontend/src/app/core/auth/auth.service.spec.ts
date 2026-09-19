@@ -302,6 +302,38 @@ describe('AuthService', () => {
       expect(service.refreshToken()).toBe(REFRESH_TOKEN);
     });
 
+    /**
+     * A regression guard on the shared terminal, where one employee signs in
+     * over another's session all day. `hold()` writes all three signals
+     * unconditionally; if a later change ever made a write conditional on the
+     * slot being empty, the outgoing employee's credential would go on signing
+     * the incoming employee's requests and every other test here would still
+     * pass.
+     */
+    it('replaces the held session when a second employee signs in at the same terminal', () => {
+      service.login(CREDENTIALS).subscribe();
+      httpMock.expectOne(SIGN_IN_URL).flush(signInEnvelope());
+
+      expect(service.accessToken()).toBe(ACCESS_TOKEN);
+
+      service.login({ employeeId: '200913', pin: '4470' }).subscribe();
+      httpMock.expectOne(SIGN_IN_URL).flush(
+        signInEnvelope({
+          employeeId: '200913',
+          name: 'Jordan Reyes',
+          role: 'StoreManager',
+          access_token: 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIyMDA5MTMifQ.c2Vjb25k',
+          refresh_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyMDA5MTMifQ.cmVmcmVzaDI',
+        }),
+      );
+
+      expect(service.currentEmployee()?.id).toBe('200913');
+      expect(service.accessToken()).toBe('eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIyMDA5MTMifQ.c2Vjb25k');
+      expect(service.refreshToken()).toBe(
+        'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyMDA5MTMifQ.cmVmcmVzaDI',
+      );
+    });
+
     it('writes neither token to localStorage or sessionStorage', () => {
       service.login(CREDENTIALS).subscribe();
 

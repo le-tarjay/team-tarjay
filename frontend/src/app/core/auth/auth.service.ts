@@ -130,9 +130,33 @@ export class AuthService implements IAuthService {
   }
 
   /**
-   * One place, so a sign-in can never leave the session half-held: an identity
-   * this app can't use throws before any of this runs, and the tokens are
-   * dropped with it rather than outliving a failed sign-in.
+   * Commits one resolved sign-in to the session: who is standing at the
+   * terminal, and the two Keycloak artifacts that session runs on.
+   *
+   * Three things about it are deliberate.
+   *
+   * **It is the only writer of the three signals other than `logout()`.**
+   * Employee, access token and refresh token are one fact — a session — split
+   * across three signals only because they are read separately. Writing them
+   * from one place is what stops a future caller setting an employee without
+   * the credential that request-signing needs, or the reverse.
+   *
+   * **It runs after validation, never around it.** `toResolvedSession` throws
+   * for an identity this app cannot use, and it throws upstream of this in the
+   * `map`/`tap` pair, so a rejected sign-in never reaches here at all. That is
+   * why there is no "roll back what I just set" path: nothing is set until the
+   * response has already proven usable. A sign-in either lands whole or leaves
+   * the previous state untouched.
+   *
+   * **Every write is `set`, unconditionally.** Signing in over an existing
+   * session replaces all three values rather than merging with them, so one
+   * employee's credential can never survive into the next employee's session
+   * on a shared terminal. `auth.service.spec.ts` "replaces the held session
+   * when a second employee signs in at the same terminal" is the guard on
+   * that.
+   *
+   * The signals are `set` rather than mutated because this app is zoneless:
+   * a field assignment would update the value and re-render nothing.
    */
   private hold(session: ResolvedSession): void {
     this.employee.set(session.employee);
