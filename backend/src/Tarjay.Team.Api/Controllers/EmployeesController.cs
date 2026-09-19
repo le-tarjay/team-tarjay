@@ -16,14 +16,17 @@ public sealed class EmployeesController(IEmployeeIdentityResolver identityResolv
 {
     /// <summary>
     /// Signs an employee in, resolving their Employee ID and PIN into the role, department, and
-    /// job function they hold.
+    /// job function they hold, and into the tokens the new session runs on.
     /// </summary>
     /// <param name="request">The Employee ID and PIN being submitted.</param>
     /// <param name="cancellationToken">Cancels the sign-in.</param>
-    /// <returns>The resolved identity, wrapped in the standard success envelope.</returns>
+    /// <returns>The resolved session, wrapped in the standard success envelope.</returns>
     /// <remarks>
     /// The identity resolved here is resolved once and holds for the session that follows; it is
-    /// not re-checked against the authority on later requests.
+    /// not re-checked against the authority on later requests. Signing in also ends whatever other
+    /// sessions the employee held, so a 200 from here means both that the credentials were good
+    /// and that this is now the employee's only live session — the two are not reported separately
+    /// because a caller cannot act on one without the other.
     /// </remarks>
     [HttpPost("sign-in")]
     [ProducesResponseType(typeof(ApiResponse<SignInResponse>), StatusCodes.Status200OK)]
@@ -37,8 +40,8 @@ public sealed class EmployeesController(IEmployeeIdentityResolver identityResolv
     {
         // Both fields are non-null here: the validation filter rejected the request otherwise,
         // before this action was entered and before any call to the identity provider.
-        var identity = await identityResolver.ResolveAsync(request.EmployeeId!, request.Pin!, cancellationToken);
+        var session = await identityResolver.ResolveAsync(request.EmployeeId!, request.Pin!, cancellationToken);
 
-        return Ok(new ApiResponse<SignInResponse> { Data = SignInResponse.From(identity) });
+        return Ok(new ApiResponse<SignInResponse> { Data = SignInResponse.From(session) });
     }
 }
