@@ -1,5 +1,7 @@
 using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,6 +21,11 @@ namespace Tarjay.Team.Api.DependencyInjection;
 /// </remarks>
 internal static class EmployeeTokenAuthenticationServiceCollectionExtensions
 {
+    // Set while authenticating, read while challenging — the two events are the only place the
+    // handler lets us tell "the realm did not answer" apart from "the credential was bad" by the
+    // time a status code is being chosen.
+    private const string RealmUnreachable = "Identity:RealmUnreachable";
+
     /// <summary>
     /// Adds JWT bearer authentication pointed at the realm named by the <c>Identity</c>
     /// configuration section, plus the authorization services <c>[Authorize]</c> runs on.
@@ -88,6 +95,61 @@ internal static class EmployeeTokenAuthenticationServiceCollectionExtensions
                     // epic exists to bound how long a device keeps acting after its session ends;
                     // the default five-minute skew would silently double that window.
                     ClockSkew = TimeSpan.Zero,
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = context =>
+                    {
+                        // Two unrelated failures arrive here. One is the caller's: a token that
+                        // is expired, forged or from another realm, which is a 401 and is what
+                        // the rest of this registration is about. The other is ours: the realm's
+                        // discovery document could not be fetched, so nothing could be validated
+                        // at all. Left alone the handler rethrows that one and it leaves as a
+                        // 500, which tells a caller its request was bad when in fact this API
+                        // cannot presently answer. 503 says the right thing, and says it in the
+                        // one way a client can act on: retry, do not re-authenticate.
+                        //
+                        // The discriminator is the exception type. Everything the token
+                        // validator rejects a credential for derives from SecurityTokenException;
+                        // a configuration fetch that fails does not — IdentityModel raises
+                        // InvalidOperationException (IDX20803), wrapping whatever the transport
+                        // threw.
+                        if (context.Exception is not SecurityTokenException)
+                        {
+                            context.HttpContext.Items[RealmUnreachable] = true;
+
+                            // Hands the handler a result so it returns instead of rethrowing.
+                            // The status code is set in OnChallenge, which runs after this and
+                            // would otherwise overwrite anything set here with its own 401.
+                            context.Fail(context.Exception);
+                        }
+
+                        return Task.CompletedTask;
+                    },
+
+                    OnChallenge = context =>
+                    {
+                        if (context.HttpContext.Items.ContainsKey(RealmUnreachable))
+                        {
+                            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+
+                            // Suppresses the 401 challenge the handler would otherwise write.
+                            context.HandleResponse();
+
+                            return Task.CompletedTask;
+                        }
+
+                        // `error` stays: it is the one bit that separates "your token was
+                        // rejected" from "you sent none", which is what lets a client re-auth
+                        // rather than prompt, and it is asserted as such. `error_description` is
+                        // dropped, because it is IdentityModel's internal diagnostic — exact
+                        // expiry instants, issuer strings, key ids — narrated to an unauthenticated
+                        // caller. A client cannot act on any of it; the logs already carry it.
+                        context.ErrorDescription = null;
+
+                        return Task.CompletedTask;
+                    },
                 };
             });
 

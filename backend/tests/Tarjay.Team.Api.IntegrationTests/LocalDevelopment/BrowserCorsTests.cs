@@ -17,7 +17,6 @@ namespace Tarjay.Team.Api.IntegrationTests.LocalDevelopment;
 public class BrowserCorsTests
 {
     private const string SignInUrl = "/v1/employees/sign-in";
-    private const string ProtectedUrl = "/weatherforecast";
     private const string Pin = "8321";
     private const string DevServerOrigin = "http://localhost:4200";
     private const string AllowOrigin = "Access-Control-Allow-Origin";
@@ -82,7 +81,7 @@ public class BrowserCorsTests
         using var factory = LocalBrowserAccessFactory.InDevelopment();
         using var client = factory.CreateClient();
 
-        using var preflight = new HttpRequestMessage(HttpMethod.Options, ProtectedUrl);
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, TestRoutes.ProtectedUrl);
         preflight.Headers.Add("Origin", DevServerOrigin);
         preflight.Headers.Add("Access-Control-Request-Method", "GET");
         preflight.Headers.Add("Access-Control-Request-Headers", "authorization");

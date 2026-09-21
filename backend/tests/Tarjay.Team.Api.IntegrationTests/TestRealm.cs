@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -78,6 +77,22 @@ public static class TestRealm
     }
 
     /// <summary>
+    /// Points the app's JWT bearer options at a realm whose discovery document cannot be
+    /// fetched, which is what a Keycloak that is down or misconfigured looks like from here.
+    /// </summary>
+    /// <param name="services">The test service collection to post-configure through.</param>
+    public static void PinDiscoveryToAnUnreachableRealm(IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+        {
+            options.Configuration = null;
+            options.ConfigurationManager = new UnreachableConfigurationManager();
+        });
+    }
+
+    /// <summary>
     /// A token the app should accept, carrying the three claims the realm's protocol mappers put
     /// on a real employee's access token.
     /// </summary>
@@ -140,32 +155,19 @@ public static class TestRealm
 
         return new JsonWebTokenHandler().CreateToken(descriptor);
     }
-}
 
-/// <summary>
-/// Records the <see cref="ClaimsPrincipal"/> the app ends up with, so a test can assert on what
-/// the token actually projected.
-/// </summary>
-/// <remarks>
-/// A claims transformation rather than a test-only endpoint: the app has no endpoint that echoes
-/// the caller back, and adding one to production code so a test can read it would be inventing
-/// surface area the story does not ask for. Authentication runs transformations against the
-/// principal it just built, which is exactly the object under assertion.
-/// </remarks>
-public sealed class PrincipalCapture : IClaimsTransformation
-{
-    /// <summary>The principal from the most recent authenticated request, or null if none was.</summary>
-    public ClaimsPrincipal? Principal { get; private set; }
-
-    /// <summary>The value of <paramref name="claimType"/> on the captured principal.</summary>
-    /// <param name="claimType">The claim to read.</param>
-    /// <returns>The claim's value, or null if the principal does not carry it.</returns>
-    public string? ClaimValue(string claimType) => Principal?.FindFirst(claimType)?.Value;
-
-    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+    // What the real ConfigurationManager does when the realm does not answer: it wraps the
+    // transport failure in an InvalidOperationException (IDX20803) rather than surfacing a
+    // token-validation failure, and that distinction is exactly what the 503 path keys on.
+    private sealed class UnreachableConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>
     {
-        Principal = principal;
+        public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel) =>
+            throw new InvalidOperationException(
+                "IDX20803: Unable to obtain configuration from: 'http://localhost:8080/realms/team-targe'.");
 
-        return Task.FromResult(principal);
+        public void RequestRefresh()
+        {
+            // Nothing to refresh; the realm is unreachable by construction.
+        }
     }
 }

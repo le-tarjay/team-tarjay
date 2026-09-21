@@ -20,7 +20,6 @@ namespace Tarjay.Team.Api.IntegrationTests.LocalDevelopment;
 public class HttpsRedirectionTests
 {
     private const string SignInUrl = "/v1/employees/sign-in";
-    private const string ProtectedUrl = "/weatherforecast";
     private const string Pin = "8321";
 
     [Fact]
@@ -67,7 +66,7 @@ public class HttpsRedirectionTests
         using var client = factory.CreateClient(NoRedirects());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — the redirect runs upstream of authentication, so the caller is told to come
         // back over HTTPS rather than being refused for a missing token. Getting this order wrong
@@ -75,7 +74,7 @@ public class HttpsRedirectionTests
         // upgrading — and would mean a token was read off a request about to be discarded.
         Assert.Equal(HttpStatusCode.TemporaryRedirect, response.StatusCode);
         Assert.Equal(
-            $"https://localhost:{LocalBrowserAccessFactory.HttpsPort}{ProtectedUrl}",
+            $"https://localhost:{LocalBrowserAccessFactory.HttpsPort}{TestRoutes.ProtectedUrl}",
             response.Headers.Location?.ToString());
     }
 
@@ -88,7 +87,7 @@ public class HttpsRedirectionTests
         using var client = factory.CreateClient(NoRedirects());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);

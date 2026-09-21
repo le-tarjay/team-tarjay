@@ -20,7 +20,6 @@ namespace Tarjay.Team.Api.IntegrationTests.Identity;
 /// </remarks>
 public class ProtectedEndpointTests
 {
-    private const string ProtectedUrl = "/weatherforecast";
     private const string SignInUrl = "/v1/employees/sign-in";
 
     [Fact]
@@ -31,7 +30,7 @@ public class ProtectedEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — before this story the same request was served. That is what made a terminated
         // session cosmetic: the device kept working, it just stopped being told it was signed in.
@@ -46,7 +45,7 @@ public class ProtectedEndpointTests
         using var client = Authenticated(factory, TestRealm.ValidToken());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -62,7 +61,7 @@ public class ProtectedEndpointTests
             TestRealm.ValidToken(role: "StoreManager", department: "Front End", jobFunction: "Register"));
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — the realm's protocol mappers put these on the token and stock JWT bearer puts
         // them on the principal. Nothing in this API parses a claim by hand, and this is what says
@@ -84,7 +83,7 @@ public class ProtectedEndpointTests
         using var client = Authenticated(factory, TestRealm.ExpiredToken());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -99,8 +98,8 @@ public class ProtectedEndpointTests
         using var anonymousClient = factory.CreateClient();
 
         // Act
-        using var expired = await expiredClient.GetAsync(ProtectedUrl);
-        using var missing = await anonymousClient.GetAsync(ProtectedUrl);
+        using var expired = await expiredClient.GetAsync(TestRoutes.ProtectedUrl);
+        using var missing = await anonymousClient.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — both are 401, deliberately: a caller learns nothing from the status about which
         // it was. The challenge header still separates them, which is what lets the frontend tell
@@ -119,6 +118,45 @@ public class ProtectedEndpointTests
     }
 
     [Fact]
+    public async Task ProtectedEndpoint_WithARejectedToken_DoesNotNarrateWhyInTheChallenge()
+    {
+        // Arrange
+        using var factory = new ApiWebApplicationFactory();
+        using var client = Authenticated(factory, TestRealm.ExpiredToken());
+
+        // Act
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
+
+        // Assert — `error` stays, because a client acts on it: invalid_token means re-authenticate
+        // rather than prompt. `error_description` goes, because it is IdentityModel's diagnostic
+        // — the exact expiry instant, the issuer, the key id — handed to a caller who by
+        // definition has not authenticated and can do nothing with it.
+        var challenge = response.Headers.WwwAuthenticate.ToString();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Contains("error=\"invalid_token\"", challenge, StringComparison.Ordinal);
+        Assert.DoesNotContain("error_description", challenge, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_WhenTheRealmCannotBeReached_IsUnavailableRatherThanRefused()
+    {
+        // Arrange — a Keycloak that is down or misconfigured. The credential is a good one; the
+        // API simply cannot fetch the keys it would be checked against.
+        using var factory = new UnreachableRealmFactory();
+        using var client = Authenticated(factory, TestRealm.ValidToken());
+
+        // Act
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
+
+        // Assert — 503, not 401 and not 500. 401 would tell a caller to re-authenticate against
+        // the very realm that is down, and a device with a perfectly good token would sign its
+        // employee out over an outage. 500 would blame the request. This is retry-and-wait, and
+        // the status is the only part of that a client actually reads.
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ProtectedEndpoint_WithATokenSignedByAnUnpublishedKey_IsRefused()
     {
         // Arrange — the shape of a forged token: everything right except that the realm's
@@ -127,7 +165,7 @@ public class ProtectedEndpointTests
         using var client = Authenticated(factory, TestRealm.TokenSignedByAnotherKey());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -141,7 +179,7 @@ public class ProtectedEndpointTests
         using var client = Authenticated(factory, TestRealm.TokenFromAnotherRealm());
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — a second Keycloak, or a second realm on the same one, is not this store's
         // authority. Its signature and its issuer are both wrong here.
@@ -156,7 +194,7 @@ public class ProtectedEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        using var response = await client.GetAsync(ProtectedUrl);
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
 
         // Assert — refused at the pipeline, not inside the endpoint. An action that runs and then
         // declines to answer has already done whatever work it does.

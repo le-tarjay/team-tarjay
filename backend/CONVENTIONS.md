@@ -478,6 +478,13 @@ boundaries are, and what actually runs those images once pushed (see
   still alive, and does not read claims by hand — the realm's protocol mappers
   project `store_role`, `department`, and `job_function` onto `ClaimsPrincipal`
   on their own.
+  A rejected credential answers 401 with `WWW-Authenticate: Bearer
+  error="invalid_token"` and no `error_description`: the code is what a client
+  acts on, the description is IdentityModel's diagnostic and does not go to an
+  unauthenticated caller. A realm that cannot be reached at all answers **503**,
+  not 401 and not 500 — the credential was never the problem, and a 401 would
+  sign an employee out over an outage. Both live in `Events` on the JWT bearer
+  registration; keep the two apart by exception type rather than by message.
   Realm metadata is fetched over plain HTTP in development only. A deployed
   environment must be given an HTTPS realm authority or every authenticated
   request fails; that is infrastructure's half, and it does not exist yet.
