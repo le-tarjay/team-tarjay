@@ -1,15 +1,25 @@
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpContext,
+  HttpErrorResponse,
+  provideHttpClient,
+  withInterceptors,
+} from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { computed, provideZonelessChangeDetection, signal, Signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Observable, throwError } from 'rxjs';
 
-import { IAuthService } from './auth.service';
+import { IAuthService, SESSION_ENDED_ELSEWHERE_MESSAGE } from './auth.service';
 import { AUTHORIZATION_HEADER, bearerTokenInterceptor } from './bearer-token.interceptor';
+import { SessionEndedError } from './session-ended.error';
+import { SESSION_REFRESH_REQUEST } from './session-refresh';
 import { Employee } from '../models/auth/employee.model';
 import { AUTH_SERVICE } from '../tokens';
 
 const API_URL = '/v1/sales';
+
+const TOKEN_ENDPOINT = 'http://localhost:8080/realms/team-targe/protocol/openid-connect/token';
 
 const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.c2lnbmF0dXJl';
 
@@ -26,6 +36,9 @@ class StubAuthService implements IAuthService {
   readonly currentEmployee = this.employee.asReadonly();
   readonly isAuthenticated = computed(() => this.employee() !== null);
   readonly accessToken: Signal<string | null> = this.token.asReadonly();
+
+  /** The interceptor classifies a failure; it never reads this or writes it. */
+  readonly sessionEndedElsewhere = signal(false).asReadonly();
 
   login(): Observable<Employee> {
     return throwError(() => new Error('Not exercised by the interceptor.'));
@@ -150,6 +163,132 @@ describe('bearerTokenInterceptor', () => {
 
         expect(send(url).headers.has(AUTHORIZATION_HEADER)).toBe(false);
       });
+    });
+  });
+
+  /**
+   * The other half of what this interceptor does: telling a session that was
+   * ended elsewhere apart from a store network that simply did not answer.
+   * Only the first of those may ever end a session, so each case here asserts
+   * which of the two it is, not merely that the call failed.
+   */
+  describe('classifying a failed session refresh', () => {
+    function refresh() {
+      let caught: unknown;
+
+      http
+        .post(
+          TOKEN_ENDPOINT,
+          { grant_type: 'refresh_token' },
+          { context: new HttpContext().set(SESSION_REFRESH_REQUEST, true) },
+        )
+        .subscribe({
+          next: () => undefined,
+          error: (error: unknown) => (caught = error),
+        });
+
+      return {
+        get caught() {
+          return caught;
+        },
+        request: httpMock.expectOne(TOKEN_ENDPOINT),
+      };
+    }
+
+    it('reports an invalid_grant refusal as the session having ended', () => {
+      const attempt = refresh();
+
+      attempt.request.flush(
+        { error: 'invalid_grant', error_description: 'Session not active' },
+        { status: 400, statusText: 'Bad Request' },
+      );
+
+      expect(attempt.caught).toBeInstanceOf(SessionEndedError);
+      expect((attempt.caught as SessionEndedError).message).toBe(SESSION_ENDED_ELSEWHERE_MESSAGE);
+    });
+
+    it('reports an invalid_grant refusal answered as 401 the same way', () => {
+      const attempt = refresh();
+
+      attempt.request.flush(
+        { error: 'invalid_grant' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
+
+      expect(attempt.caught).toBeInstanceOf(SessionEndedError);
+    });
+
+    const transient: readonly { label: string; status: number; statusText: string }[] = [
+      { label: 'a gateway failure', status: 502, statusText: 'Bad Gateway' },
+      { label: 'an unavailable identity provider', status: 503, statusText: 'Service Unavailable' },
+      { label: 'a gateway timeout', status: 504, statusText: 'Gateway Timeout' },
+    ];
+
+    transient.forEach(({ label, status, statusText }) => {
+      it(`leaves ${label} as the transport failure it is`, () => {
+        const attempt = refresh();
+
+        attempt.request.flush(null, { status, statusText });
+
+        expect(attempt.caught).toBeInstanceOf(HttpErrorResponse);
+        expect(attempt.caught).not.toBeInstanceOf(SessionEndedError);
+      });
+    });
+
+    it('leaves an unreachable identity provider as the transport failure it is', () => {
+      const attempt = refresh();
+
+      attempt.request.error(new ProgressEvent('error'));
+
+      expect(attempt.caught).toBeInstanceOf(HttpErrorResponse);
+      expect(attempt.caught).not.toBeInstanceOf(SessionEndedError);
+    });
+
+    /**
+     * A malformed refresh request is also a `400`. Reading the status alone
+     * would end a live session over a bug in this app's own request.
+     */
+    it('leaves a rejection that is not invalid_grant as a transport failure', () => {
+      const attempt = refresh();
+
+      attempt.request.flush(
+        { error: 'invalid_request', error_description: 'Missing form parameter: refresh_token' },
+        { status: 400, statusText: 'Bad Request' },
+      );
+
+      expect(attempt.caught).toBeInstanceOf(HttpErrorResponse);
+      expect(attempt.caught).not.toBeInstanceOf(SessionEndedError);
+    });
+
+    /**
+     * The marker is what scopes this to a refresh. Without it, any endpoint
+     * that happened to answer with an OAuth-shaped body could sign the
+     * terminal out.
+     */
+    it('classifies nothing on a request that is not a session refresh', () => {
+      let caught: unknown;
+
+      http.get(API_URL).subscribe({
+        next: () => undefined,
+        error: (error: unknown) => (caught = error),
+      });
+
+      httpMock
+        .expectOne(API_URL)
+        .flush({ error: 'invalid_grant' }, { status: 400, statusText: 'Bad Request' });
+
+      expect(caught).toBeInstanceOf(HttpErrorResponse);
+      expect(caught).not.toBeInstanceOf(SessionEndedError);
+    });
+
+    it('sends no bearer credential to the token endpoint', () => {
+      authService.hold(ACCESS_TOKEN);
+
+      const attempt = refresh();
+
+      expect(attempt.request.request.headers.has(AUTHORIZATION_HEADER)).toBe(false);
+
+      attempt.request.flush({ access_token: ACCESS_TOKEN });
     });
   });
 
