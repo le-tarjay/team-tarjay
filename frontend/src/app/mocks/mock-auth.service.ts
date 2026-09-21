@@ -28,6 +28,14 @@ export class MockAuthService implements IAuthService {
   readonly isAuthenticated = computed(() => this.employee() !== null);
   readonly accessToken = this.access.asReadonly();
 
+  /**
+   * Always false. The mock resolves an identity and nothing else — it reaches
+   * no Keycloak, so it has no refresh to be refused and no session anyone else
+   * can end. Giving it a way to flip would be behaviour `IAuthService` does
+   * not declare, which `CONVENTIONS.md` calls out as an anti-pattern.
+   */
+  readonly sessionEnded = signal(false).asReadonly();
+
   login(credentials: LoginCredentials): Observable<Employee> {
     const isValidLogin =
       credentials.employeeId.trim().toLowerCase() === 'cashier' &&

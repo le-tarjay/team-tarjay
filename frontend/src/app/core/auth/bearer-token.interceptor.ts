@@ -1,6 +1,10 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { catchError, throwError } from 'rxjs';
 
+import { SESSION_ENDED_ELSEWHERE_MESSAGE } from './auth.service';
+import { SessionEndedError } from './session-ended.error';
+import { SESSION_REFRESH_REQUEST } from './session-refresh';
 import { AUTH_SERVICE } from '../tokens';
 
 export const AUTHORIZATION_HEADER = 'Authorization';
@@ -24,7 +28,8 @@ const HEADER_UNSAFE = /[^!-~]/;
 
 /**
  * Attaches the signed-in employee's access token to the store's own requests,
- * as `Authorization: Bearer <access_token>`.
+ * as `Authorization: Bearer <access_token>`, and classifies the one failure
+ * that means this device's session is gone.
  *
  * Registered once, in `app.config.ts` via
  * `provideHttpClient(withInterceptors([...]))`, so every `HttpClient` call in
@@ -51,11 +56,24 @@ const HEADER_UNSAFE = /[^!-~]/;
  *    credential meant it. Silently overwriting it would make this interceptor
  *    the thing breaking a call that looks correct at the call site.
  *
- * Shaped as one guarded clone feeding a single `next(...)` on purpose: the
- * story that distinguishes a terminated session (`invalid_grant`) from a
- * transport failure hangs its handling off that one call, and so extends this
- * rather than replacing it. Returning early with a second `next(...)` per
- * guard would mean that story has to add its handling to each of them.
+ * Shaped as one guarded clone feeding a single `next(...)` on purpose, and
+ * this is the story that called that in: the terminated-session
+ * (`invalid_grant`) versus transport-failure distinction hangs off that one
+ * call, in `toClassifiedFailure` below, rather than arriving as a second
+ * interceptor doing its own HTTP plumbing.
+ *
+ * **What it classifies, and what it deliberately leaves alone.** Only a
+ * request the caller marked `SESSION_REFRESH_REQUEST` is a candidate, and only
+ * an OAuth `invalid_grant` refusal on it becomes a `SessionEndedError`. Every
+ * other failure — a timeout, an unreachable host, a 5xx, a `400` for any other
+ * reason — is rethrown exactly as it arrived. That asymmetry is the fail-open
+ * rule the epic requires: only positive proof that the session is gone ends
+ * it, and silence proves nothing.
+ *
+ * **It classifies; it does not act.** Nothing is signed out here and nothing
+ * is navigated. The caller that asked for the refresh decides what a
+ * `SessionEndedError` means, which is what keeps this from turning into a
+ * place where any failed request can log the terminal out.
  *
  * The request is cloned rather than mutated because `HttpRequest` is
  * immutable by contract; `clone({ setHeaders })` is how a header is added.
@@ -63,14 +81,15 @@ const HEADER_UNSAFE = /[^!-~]/;
 export const bearerTokenInterceptor: HttpInterceptorFn = (request, next) => {
   const token = usableBearerToken(inject(AUTH_SERVICE).accessToken());
 
-  if (token === null || !isThisOrigin(request.url) || request.headers.has(AUTHORIZATION_HEADER)) {
-    return next(request);
-  }
+  const outgoing =
+    token === null || !isThisOrigin(request.url) || request.headers.has(AUTHORIZATION_HEADER)
+      ? request
+      : request.clone({
+          setHeaders: { [AUTHORIZATION_HEADER]: `Bearer ${token}` },
+        });
 
-  return next(
-    request.clone({
-      setHeaders: { [AUTHORIZATION_HEADER]: `Bearer ${token}` },
-    }),
+  return next(outgoing).pipe(
+    catchError((error: unknown) => throwError(() => toClassifiedFailure(request, error))),
   );
 };
 
@@ -86,4 +105,43 @@ function usableBearerToken(value: string | null): string | null {
 
 function isThisOrigin(url: string): boolean {
   return !ABSOLUTE_URL.test(url);
+}
+
+/**
+ * Keyed on the status first and the body second, the same shape
+ * `auth.service.ts`'s `toUserFacingError` uses for sign-in: the status says
+ * which failures are even worth reading a body for, and the body says which
+ * of those is a terminated session.
+ *
+ * `400` is what RFC 6749 §5.2 specifies for a rejected grant and what Keycloak
+ * actually answers a dead refresh token with. `401` is here because a token
+ * endpoint may answer a client-authentication failure that way and Keycloak's
+ * exact choice is a realm-configuration detail, not a contract — reading the
+ * body on both costs nothing and misreads neither. A `0` (unreachable), a
+ * timeout, or any 5xx never reaches the body check at all, because none of
+ * them is evidence about the session.
+ */
+function toClassifiedFailure(request: HttpRequest<unknown>, error: unknown): unknown {
+  if (!request.context.get(SESSION_REFRESH_REQUEST) || !(error instanceof HttpErrorResponse)) {
+    return error;
+  }
+
+  switch (error.status) {
+    case 400:
+    case 401:
+      return isInvalidGrant(error) ? new SessionEndedError(SESSION_ENDED_ELSEWHERE_MESSAGE) : error;
+    default:
+      return error;
+  }
+}
+
+/**
+ * OAuth reports its own failures in the body, under `error`, not in the status
+ * — a rejected refresh token and a malformed refresh request are both `400`,
+ * and only the first one means the session ended.
+ */
+function isInvalidGrant(error: HttpErrorResponse): boolean {
+  const body = error.error as { error?: unknown } | null;
+
+  return body?.error === 'invalid_grant';
 }
