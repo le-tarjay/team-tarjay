@@ -602,6 +602,8 @@ describe('AuthService', () => {
       elapse();
       invalidGrant();
 
+      expect(vi.getTimerCount()).toBe(0);
+
       elapse(3);
 
       httpMock.expectNone(TOKEN_ENDPOINT);
@@ -758,6 +760,15 @@ describe('AuthService', () => {
       expect(expectRefresh().request.method).toBe('POST');
     });
 
+    /**
+     * Both of these assert the timer count as well as the absence of a
+     * request, because on its own "no request was made" does not prove the
+     * timer stopped. `logout()` clears the refresh token, and `refreshSession`
+     * returns `EMPTY` without a token — so a timer left running would tick
+     * silently and `expectNone` would still pass. `vi.getTimerCount()` reads
+     * the interval itself: the only thing that takes it to zero is the
+     * subscription being torn down.
+     */
     describe('after a deliberate logout', () => {
       it('stops refreshing', () => {
         signIn();
@@ -768,7 +779,11 @@ describe('AuthService', () => {
           refresh_token: RENEWED_REFRESH_TOKEN,
         });
 
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+
         service.logout();
+
+        expect(vi.getTimerCount()).toBe(0);
 
         elapse(3);
 
@@ -778,7 +793,11 @@ describe('AuthService', () => {
       it('stops refreshing even if no refresh has happened yet', () => {
         signIn();
 
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+
         service.logout();
+
+        expect(vi.getTimerCount()).toBe(0);
 
         elapse(3);
 
