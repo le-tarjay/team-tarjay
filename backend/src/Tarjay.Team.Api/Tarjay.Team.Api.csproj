@@ -9,6 +9,13 @@
     <ItemGroup>
         <PackageReference Include="FluentValidation" Version="12.0.0"/>
         <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0"/>
+        <!--
+          Required by AddJwtBearer: bearer-token validation is not in the shared framework, it is
+          this package. The integration-test project already carried it at this same version for
+          its test-only scaffolding; that scaffolding now reconciles with the real registration
+          here, so the two must not drift apart.
+        -->
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10"/>
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1"/>
     </ItemGroup>
 
