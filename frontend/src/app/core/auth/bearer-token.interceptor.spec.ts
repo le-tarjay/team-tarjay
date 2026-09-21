@@ -38,7 +38,7 @@ class StubAuthService implements IAuthService {
   readonly accessToken: Signal<string | null> = this.token.asReadonly();
 
   /** The interceptor classifies a failure; it never reads this or writes it. */
-  readonly sessionEndedElsewhere = signal(false).asReadonly();
+  readonly sessionEnded = signal(false).asReadonly();
 
   login(): Observable<Employee> {
     return throwError(() => new Error('Not exercised by the interceptor.'));

@@ -538,7 +538,7 @@ describe('AuthService', () => {
       expect(service.accessToken()).toBe(RENEWED_ACCESS_TOKEN);
       expect(service.refreshToken()).toBe(RENEWED_REFRESH_TOKEN);
       expect(service.isAuthenticated()).toBe(true);
-      expect(service.sessionEndedElsewhere()).toBe(false);
+      expect(service.sessionEnded()).toBe(false);
     });
 
     it('presents the renewed refresh token on the next refresh', () => {
@@ -578,7 +578,7 @@ describe('AuthService', () => {
       elapse();
       invalidGrant();
 
-      expect(service.sessionEndedElsewhere()).toBe(true);
+      expect(service.sessionEnded()).toBe(true);
     });
 
     /**
@@ -637,7 +637,7 @@ describe('AuthService', () => {
           fail(expectRefresh());
 
           expect(service.isAuthenticated()).toBe(true);
-          expect(service.sessionEndedElsewhere()).toBe(false);
+          expect(service.sessionEnded()).toBe(false);
           expect(service.accessToken()).toBe(ACCESS_TOKEN);
           expect(service.refreshToken()).toBe(REFRESH_TOKEN);
         });
@@ -668,7 +668,7 @@ describe('AuthService', () => {
         }
 
         expect(service.isAuthenticated()).toBe(true);
-        expect(service.sessionEndedElsewhere()).toBe(false);
+        expect(service.sessionEnded()).toBe(false);
 
         elapse();
 
@@ -692,7 +692,7 @@ describe('AuthService', () => {
         });
 
         expect(service.accessToken()).toBe(RENEWED_ACCESS_TOKEN);
-        expect(service.sessionEndedElsewhere()).toBe(false);
+        expect(service.sessionEnded()).toBe(false);
       });
     });
 
@@ -738,11 +738,11 @@ describe('AuthService', () => {
       elapse();
       invalidGrant();
 
-      expect(service.sessionEndedElsewhere()).toBe(true);
+      expect(service.sessionEnded()).toBe(true);
 
       signIn();
 
-      expect(service.sessionEndedElsewhere()).toBe(false);
+      expect(service.sessionEnded()).toBe(false);
     });
 
     it('refreshes again for the employee who signs in after a detected session end', () => {
@@ -794,7 +794,7 @@ describe('AuthService', () => {
 
         service.logout();
 
-        expect(service.sessionEndedElsewhere()).toBe(false);
+        expect(service.sessionEnded()).toBe(false);
       });
     });
   });

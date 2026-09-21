@@ -25,7 +25,7 @@ class StubAuthService implements IAuthService {
 
   /** The shell reads identity, never the credential or how a session ended. */
   readonly accessToken = signal<string | null>(null).asReadonly();
-  readonly sessionEndedElsewhere = signal(false).asReadonly();
+  readonly sessionEnded = signal(false).asReadonly();
 
   login(): Observable<Employee> {
     return throwError(() => new Error('Not exercised by the app shell.'));

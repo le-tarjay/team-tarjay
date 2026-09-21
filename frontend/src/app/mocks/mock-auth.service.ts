@@ -34,7 +34,7 @@ export class MockAuthService implements IAuthService {
    * can end. Giving it a way to flip would be behaviour `IAuthService` does
    * not declare, which `CONVENTIONS.md` calls out as an anti-pattern.
    */
-  readonly sessionEndedElsewhere = signal(false).asReadonly();
+  readonly sessionEnded = signal(false).asReadonly();
 
   login(credentials: LoginCredentials): Observable<Employee> {
     const isValidLogin =

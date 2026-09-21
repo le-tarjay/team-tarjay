@@ -47,7 +47,7 @@ export interface IAuthService {
    * has to return to Login and say why, and both of those happen after the
    * session itself is already gone.
    */
-  sessionEndedElsewhere: Signal<boolean>;
+  sessionEnded: Signal<boolean>;
 
   login(credentials: LoginCredentials): Observable<Employee>;
   logout(): void;
@@ -91,15 +91,16 @@ export const INVALID_REQUEST_MESSAGE = 'Enter your employee ID and PIN.';
  * The one failure that is not the employee's doing and not a fault either:
  * their ID was used to sign in somewhere else, which ended this session.
  *
- * The wording is the designer's, confirmed for the epic (API map, design row
- * 3). It is defined here, with the sign-in messages, because that is the
- * pattern the Login screen already reads message text from — but nothing
- * renders it yet. Detection is this story; showing it on Login is LET-135.
- * Until then it is the message a `SessionEndedError` carries.
+ * The wording is the reviewer's, set on review of PR #42. It replaces the
+ * longer line the designer confirmed for the epic (API map, design row 3) —
+ * see that PR thread, and LET-135 before this text is rendered. It is defined
+ * here, with the sign-in messages, because that is the pattern the Login
+ * screen already reads message text from — but nothing renders it yet.
+ * Detection is this story; showing it on Login is LET-135. Until then it is
+ * the message a `SessionEndedError` carries.
  */
 export const SESSION_ENDED_ELSEWHERE_MESSAGE =
-  'You were signed out because your employee ID was signed in on another device. ' +
-  'Sign in again to continue.';
+  'Your session was closed because you signed in from another device.';
 
 /**
  * Roughly a minute, per the epic: short enough that an idle terminal is not
@@ -184,7 +185,7 @@ export class AuthService implements IAuthService, OnDestroy {
   readonly isAuthenticated = computed(() => this.employee() !== null);
   readonly accessToken = this.access.asReadonly();
   readonly refreshToken = this.refresh.asReadonly();
-  readonly sessionEndedElsewhere = this.endedElsewhere.asReadonly();
+  readonly sessionEnded = this.endedElsewhere.asReadonly();
 
   login(credentials: LoginCredentials): Observable<Employee> {
     return this.http.post<SignInEnvelope>(SIGN_IN_ENDPOINT, credentials).pipe(
