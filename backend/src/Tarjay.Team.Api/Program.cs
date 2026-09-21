@@ -13,6 +13,7 @@ public class Program
 
         builder.Services.AddContactStore();
         builder.Services.AddEmployeeIdentity(builder.Configuration);
+        builder.Services.AddEmployeeTokenAuthentication(builder.Configuration);
         builder.Services.AddRequestValidation();
         builder.Services.AddApiExceptionHandling();
         builder.Services.AddLocalDevelopmentCors(builder.Environment);
@@ -40,6 +41,15 @@ public class Program
         {
             app.UseHttpsRedirection();
         }
+
+        // Downstream of both of the above, and that ordering is load-bearing in two ways. A CORS
+        // preflight carries no credentials by definition, so it has to be answered by the CORS
+        // middleware before anything asks it for a token — otherwise the browser reads a 401 as a
+        // denied preflight and never sends the real request. And a plain-HTTP request outside
+        // development has to be redirected before it is authenticated, so the token is not read
+        // off a request that is about to be thrown away anyway.
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         app.MapControllers();
 

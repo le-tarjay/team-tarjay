@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -38,8 +41,14 @@ public sealed class LocalBrowserAccessFactory(string environmentName) : WebAppli
     /// <summary>A port that is never listened on; it only has to be discoverable, not reachable.</summary>
     public const string HttpsPort = "8443";
 
+    /// <summary>An HTTPS realm URL for the environments that insist on one. Never actually fetched.</summary>
+    private const string HttpsRealmAuthority = "https://identity.invalid:8443";
+
     /// <summary>The stubbed identity provider, so a test can choose the status the API returns.</summary>
     public StubEmployeeIdentityResolver Resolver { get; } = new();
+
+    /// <summary>The principal the app authenticated on the most recent request.</summary>
+    public PrincipalCapture Principal { get; } = new();
 
     /// <summary>The app as a developer runs it locally.</summary>
     public static LocalBrowserAccessFactory InDevelopment() => new(Environments.Development);
@@ -56,10 +65,26 @@ public sealed class LocalBrowserAccessFactory(string environmentName) : WebAppli
         // See the remarks: this is what makes UseHttpsRedirection actually redirect.
         builder.UseSetting("HTTPS_PORT", HttpsPort);
 
+        // Outside development the app refuses to fetch realm metadata over plain HTTP, and
+        // appsettings.json names a plain-HTTP realm because that is what runs locally. So the
+        // deployed-environment half of these tests is given the HTTPS realm URL a deployed
+        // environment would have. This configures the app rather than relaxing it: the rule under
+        // test stays on, and it is satisfied the way a real deployment satisfies it. Nothing is
+        // ever fetched from this URL — discovery is pinned below.
+        if (!string.Equals(environmentName, Environments.Development, StringComparison.Ordinal))
+        {
+            builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Identity:Authority"] = HttpsRealmAuthority }));
+        }
+
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IEmployeeIdentityResolver>();
             services.AddSingleton<IEmployeeIdentityResolver>(Resolver);
+
+            TestRealm.PinDiscoveryToTestRealm(services);
+
+            services.AddSingleton<IClaimsTransformation>(Principal);
         });
     }
 }

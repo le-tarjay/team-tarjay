@@ -458,12 +458,34 @@ boundaries are, and what actually runs those images once pushed (see
   `KeycloakEmployeeIdentityResolver`. Sign-in now returns Keycloak's own access
   and refresh tokens, unmodified, and ends the employee's other sessions
   through the Admin API before it answers (LET-130) — the store still mints no
-  session artifact of its own. What does not exist yet is anything *checking* a
-  token: `Program.cs` still has no `AddAuthentication`/`AddJwtBearer` call
-  (`ApiWebApplicationFactory`'s JWT bearer setup is test-only scaffolding), so
-  nothing validates a bearer credential on any request. Don't add `[Authorize]`
-  or assume a bearer token is present until that's wired up for real. LET-107
-  owns that work; revisit this paragraph when it lands.
+  session artifact of its own.
+  **Those tokens are now checked, too** (LET-132): `Program.cs` calls
+  `AddEmployeeTokenAuthentication`, which is stock
+  `AddAuthentication().AddJwtBearer()` against the realm, and
+  `UseAuthentication()`/`UseAuthorization()` sit in the pipeline downstream of
+  the CORS and HTTPS-redirect middleware. **New endpoints get `[Authorize]`,
+  and you may assume a valid bearer token on any request that reaches an
+  action.** There is no global fallback policy, deliberately — one turns a
+  405 into a 401 for any method a route does not map — so an endpoint that is
+  not attributed is not protected. Attribute it. Sign-in carries
+  `[AllowAnonymous]` and is the only endpoint that may.
+  Three things this validates and three it does not. It checks the signature
+  against the realm's published keys, the issuer, and the expiry, with
+  `ClockSkew` set to zero because the realm's access-token lifespan is 300
+  seconds and the default five-minute grace would double it. It does not
+  check the audience (the committed realm puts no client-specific `aud` on an
+  employee token), does not ask Keycloak whether the session behind a token is
+  still alive, and does not read claims by hand — the realm's protocol mappers
+  project `store_role`, `department`, and `job_function` onto `ClaimsPrincipal`
+  on their own.
+  Realm metadata is fetched over plain HTTP in development only. A deployed
+  environment must be given an HTTPS realm authority or every authenticated
+  request fails; that is infrastructure's half, and it does not exist yet.
+  `ApiWebApplicationFactory`'s JWT bearer scaffolding is still test-only, but it
+  no longer stands apart from this: it swaps the signing key and nothing else,
+  so an integration test runs the same validation path production does. See
+  `tests/Tarjay.Team.Api.IntegrationTests/TestRealm.cs` for the key and the
+  tokens, and reuse it rather than standing up a second one.
 - **Style**: file-scoped namespaces (`namespace Foo.Bar;`) everywhere, XML
   doc comments (`<summary>`) on public types and members in `Domain` that
   aren't self-explanatory from their name. See Code style for indentation,

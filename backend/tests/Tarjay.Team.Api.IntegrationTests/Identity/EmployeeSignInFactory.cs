@@ -43,6 +43,12 @@ public sealed class EmployeeSignInFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IEmployeeIdentityResolver>();
             services.AddSingleton<IEmployeeIdentityResolver>(Resolver);
+
+            // Sign-in is anonymous, so nothing here authenticates and discovery is never reached
+            // for. Pinned anyway, and by the same helper the other factories use: a sign-in test
+            // that one day sends a token should not be the thing that discovers this factory was
+            // the one still pointed at the network.
+            TestRealm.PinDiscoveryToTestRealm(services);
         });
     }
 }

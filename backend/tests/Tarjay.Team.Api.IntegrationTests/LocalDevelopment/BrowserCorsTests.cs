@@ -17,6 +17,7 @@ namespace Tarjay.Team.Api.IntegrationTests.LocalDevelopment;
 public class BrowserCorsTests
 {
     private const string SignInUrl = "/v1/employees/sign-in";
+    private const string ProtectedUrl = "/weatherforecast";
     private const string Pin = "8321";
     private const string DevServerOrigin = "http://localhost:4200";
     private const string AllowOrigin = "Access-Control-Allow-Origin";
@@ -70,6 +71,34 @@ public class BrowserCorsTests
         Assert.Empty(factory.Resolver.Calls);
         Assert.NotEqual(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Preflight_ForAProtectedRoute_IsNotBlockedByTheAuthMiddleware()
+    {
+        // Arrange — a browser will not attach an Authorization header to a preflight, by spec. So
+        // the preflight for every authenticated request the frontend makes arrives with no
+        // credential at all, and has to be answered anyway.
+        using var factory = LocalBrowserAccessFactory.InDevelopment();
+        using var client = factory.CreateClient();
+
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, ProtectedUrl);
+        preflight.Headers.Add("Origin", DevServerOrigin);
+        preflight.Headers.Add("Access-Control-Request-Method", "GET");
+        preflight.Headers.Add("Access-Control-Request-Headers", "authorization");
+
+        // Act
+        using var response = await client.SendAsync(preflight);
+
+        // Assert — a 401 here would read to the browser as a denied preflight, and the real
+        // request that would have carried the token never gets sent. The CORS middleware sits
+        // upstream of authentication precisely so this is answered before anything asks for one.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(DevServerOrigin, Single(response, AllowOrigin));
+        Assert.Contains(
+            "authorization",
+            Single(response, "Access-Control-Allow-Headers"),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

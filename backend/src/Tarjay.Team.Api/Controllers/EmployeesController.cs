@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Tarjay.Team.Api.Models;
@@ -28,6 +29,10 @@ public sealed class EmployeesController(IEmployeeIdentityResolver identityResolv
     /// and that this is now the employee's only live session — the two are not reported separately
     /// because a caller cannot act on one without the other.
     /// </remarks>
+    // The one endpoint that cannot require a token, because it is where a token comes from.
+    // Stated rather than left implicit: it is anonymous by intent, not by nobody having gotten
+    // round to protecting it.
+    [AllowAnonymous]
     [HttpPost("sign-in")]
     [ProducesResponseType(typeof(ApiResponse<SignInResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status422UnprocessableEntity)]
