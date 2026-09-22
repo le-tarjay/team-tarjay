@@ -92,12 +92,16 @@ export const INVALID_REQUEST_MESSAGE = 'Enter your employee ID and PIN.';
  * their ID was used to sign in somewhere else, which ended this session.
  *
  * The wording is the reviewer's, set on review of PR #42. It replaces the
- * longer line the designer confirmed for the epic (API map, design row 3) —
- * see that PR thread, and LET-135 before this text is rendered. It is defined
- * here, with the sign-in messages, because that is the pattern the Login
- * screen already reads message text from — but nothing renders it yet.
- * Detection is this story; showing it on Login is LET-135. Until then it is
- * the message a `SessionEndedError` carries.
+ * longer line the designer confirmed for the epic (API map, design row 3), and
+ * that disagreement is still open — see PR #42's thread and LET-135's report.
+ * **This is now what the Login screen shows**, so changing the copy is a change
+ * to what the employee reads, and it is a change here rather than there: this
+ * constant is the only place the wording lives, which is why the Login screen
+ * renders it instead of a literal of its own.
+ *
+ * It is defined here, with the sign-in messages, because that is the pattern
+ * the Login screen reads message text from. It is also the message a
+ * `SessionEndedError` carries.
  */
 export const SESSION_ENDED_ELSEWHERE_MESSAGE =
   'Your session was closed because you signed in from another device.';
