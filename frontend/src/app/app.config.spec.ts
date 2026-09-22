@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 import { appConfig } from './app.config';
 import { AuthService, SESSION_REFRESH_INTERVAL_MS } from './core/auth/auth.service';
 import { AUTHORIZATION_HEADER } from './core/auth/bearer-token.interceptor';
-import { LOGIN_ROUTE } from './core/auth/session-teardown.service';
+import { LOGIN_ROUTE } from './core/navigation/route-access';
 import { SaleService } from './core/sale/sale.service';
 import { AUTH_SERVICE } from './core/tokens';
 import { MockAuthService } from './mocks/mock-auth.service';

@@ -7,7 +7,11 @@ import {
   RouterStateSnapshot,
 } from '@angular/router';
 
-import { DEFAULT_SIGNED_IN_ROUTE, isRouteAllowedForEmployee } from '../navigation/route-access';
+import {
+  DEFAULT_SIGNED_IN_ROUTE,
+  isRouteAllowedForEmployee,
+  LOGIN_ROUTE,
+} from '../navigation/route-access';
 import { AUTH_SERVICE } from '../tokens';
 import { returnUrlParams } from './return-url';
 
@@ -27,7 +31,7 @@ export const authGuard: CanActivateFn & CanActivateChildFn = (
   const employee = authService.currentEmployee();
 
   if (!employee) {
-    return router.createUrlTree(['/login'], { queryParams: returnUrlParams(state.url) });
+    return router.createUrlTree([LOGIN_ROUTE], { queryParams: returnUrlParams(state.url) });
   }
 
   if (isRouteAllowedForEmployee(employee, state.url, declaredNavItem(route))) {

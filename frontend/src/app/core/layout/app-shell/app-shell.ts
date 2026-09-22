@@ -8,6 +8,7 @@ import {
   roleSpecificNavItem,
   SHARED_NAV_ITEMS,
 } from '../../navigation/role-navigation';
+import { LOGIN_ROUTE } from '../../navigation/route-access';
 import { AUTH_SERVICE } from '../../tokens';
 
 @Component({
@@ -96,7 +97,7 @@ export class AppShellComponent {
   protected logout(): void {
     this.isAccountMenuOpen.set(false);
     this.authService.logout();
-    this.router.navigateByUrl('/login');
+    this.router.navigateByUrl(LOGIN_ROUTE);
   }
 
   /**

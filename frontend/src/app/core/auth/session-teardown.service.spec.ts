@@ -5,8 +5,9 @@ import { Observable, throwError } from 'rxjs';
 import { MockInstance, vi } from 'vitest';
 
 import { IAuthService } from './auth.service';
-import { LOGIN_ROUTE, SessionTeardownService } from './session-teardown.service';
+import { SessionTeardownService } from './session-teardown.service';
 import { Employee } from '../models/auth/employee.model';
+import { LOGIN_ROUTE } from '../navigation/route-access';
 import { SaleService } from '../sale/sale.service';
 import { AUTH_SERVICE } from '../tokens';
 import { Product } from '../models/product/product.model';
@@ -170,6 +171,25 @@ describe('SessionTeardownService', () => {
       endSessionElsewhere();
 
       expect(navigate).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The other half of that sequence. The in-progress sale is discarded while
+     * the session it belongs to is still identifiable, so `logout()` is entered
+     * with nothing left on screen to belong to a signed-out employee.
+     */
+    it('discards the sale before it clears the session', () => {
+      signInAndStartASale();
+
+      const logout = vi.spyOn(authService, 'logout').mockImplementation(() => {
+        expect(saleService.hasActiveSale()).toBe(false);
+      });
+
+      endSessionElsewhere();
+
+      expect(logout).toHaveBeenCalledTimes(1);
+
+      logout.mockRestore();
     });
 
     it('discards the in-progress sale', () => {

@@ -1,18 +1,9 @@
 import { effect, inject, Injectable, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { LOGIN_ROUTE } from '../navigation/route-access';
 import { SaleService } from '../sale/sale.service';
 import { AUTH_SERVICE } from '../tokens';
-
-/**
- * Where a device goes when its session ends. No `returnUrl` rides along, and
- * that is the point rather than an omission: the query parameter exists to
- * carry an *interrupted* employee back to what they were doing
- * (`return-url.ts`), and the next person to sign in at this terminal is a
- * different employee. Handing them the previous one's screen is the thing this
- * teardown exists to prevent.
- */
-export const LOGIN_ROUTE = '/login';
 
 /**
  * Turns "this session was ended by a sign-in elsewhere" into an empty screen
@@ -73,7 +64,12 @@ export class SessionTeardownService {
    * Navigation is last, and has to be. `LoginComponent.ngOnInit` bounces an
    * employee who is still signed in straight back to `/sale`, so arriving at
    * Login before the session was cleared would land the device back on the
-   * screen it was just torn down from.
+   * screen it was just torn down from. No `returnUrl` rides along with it, and
+   * that is the point rather than an omission: the query parameter exists to
+   * carry an *interrupted* employee back to what they were doing
+   * (`return-url.ts`), and the next person to sign in at this terminal is a
+   * different employee. Handing them the previous one's screen is the thing
+   * this teardown exists to prevent.
    *
    * There is no confirmation step anywhere in here, and no transitional or
    * "reconnecting" screen between the two: the session is already gone, so
