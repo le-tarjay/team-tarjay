@@ -815,6 +815,25 @@ describe('AuthService', () => {
 
         expect(service.sessionEnded()).toBe(false);
       });
+
+      /**
+       * The other half of that distinction, and a contract LET-134 depends on:
+       * the teardown that fires on a detected session end calls `logout()` to
+       * clear the session, so a `logout()` that also cleared this signal would
+       * erase the reason the device is on its way to Login before the Login
+       * screen could read it (LET-135). Only the next sign-in clears it.
+       */
+      it('keeps a detected session end set when the teardown logs the device out', () => {
+        signIn();
+
+        elapse();
+        invalidGrant();
+
+        service.logout();
+
+        expect(service.sessionEnded()).toBe(true);
+        expect(service.isAuthenticated()).toBe(false);
+      });
     });
   });
 

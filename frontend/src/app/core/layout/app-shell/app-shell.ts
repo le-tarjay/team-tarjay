@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { employeeRoleLabel } from '../../navigation/employee-role-label';
@@ -61,6 +61,28 @@ export class AppShellComponent {
 
     return employee ? adminNavItems(employee) : [];
   });
+
+  /**
+   * A session ended elsewhere takes this menu down with it.
+   *
+   * The redirect `SessionTeardownService` fires destroys the shell and every
+   * routed screen under it, which is what disposes of a layer a feature
+   * component owns. This menu is the exception: it belongs to the shell itself,
+   * and `Router.navigateByUrl` resolves asynchronously — so between the
+   * teardown and the redirect completing, an open menu would still be on
+   * screen, over a header that has already emptied.
+   *
+   * It closes here rather than in the teardown because the shell is the only
+   * writer of its own UI state; reaching into a component's signals from a
+   * service is the anti-pattern `CONVENTIONS.md` names.
+   */
+  constructor() {
+    effect(() => {
+      if (this.authService.sessionEnded()) {
+        this.isAccountMenuOpen.set(false);
+      }
+    });
+  }
 
   /**
    * Bootstrap's dropdown JavaScript is not loaded (only its stylesheet is, in
