@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { computed, Provider, provideZonelessChangeDetection, signal } from '@angular/core';
+import { Provider, provideZonelessChangeDetection } from '@angular/core';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { MockInstance, vi } from 'vitest';
 
 import { LoginComponent } from './login';
@@ -12,62 +12,21 @@ import {
   SESSION_ENDED_ELSEWHERE_MESSAGE,
 } from '../../core/auth/auth.service';
 import { Employee } from '../../core/models/auth/employee.model';
+import {
+  SIGNED_IN_EMPLOYEE,
+  StubAuthService,
+} from '../../core/auth/testing/stub-auth.service';
 import { AUTH_SERVICE } from '../../core/tokens';
 import { MockAuthService } from '../../mocks/mock-auth.service';
 
 const EMPTY_FIELDS_MESSAGE = 'Enter your employee ID and PIN.';
 
-const SIGNED_IN_EMPLOYEE: Employee = {
-  id: 'cashier',
-  name: 'Alex Rivera',
-  role: 'Associate',
-  department: 'Grocery',
-  jobFunction: 'Register',
-};
-
 /**
- * `MockAuthService` reports `sessionEnded` as a constant `false` — it reaches
- * no Keycloak, so it has no refresh to be refused — and teaching it to flip
- * would hand it behavior `IAuthService` does not declare, the anti-pattern
- * `CONVENTIONS.md` names. So the returned-to-Login tests drive the signal from
- * a stub instead, the same shape `app-shell.spec.ts` and
- * `session-teardown.service.spec.ts` already use.
- *
- * Two things here mirror the real `AuthService` because this screen depends on
- * them: a session ended elsewhere leaves `sessionEnded` set with nobody signed
- * in — the teardown has already called `logout()` by the time Login renders —
- * and a successful sign-in is what clears it.
+ * The tests about a return to Login use `StubAuthService` rather than
+ * `MockAuthService`, because the mock reports `sessionEnded` as a constant
+ * `false` and teaching it to flip would hand it behavior `IAuthService` does
+ * not declare. That reasoning lives with the stub.
  */
-class StubAuthService implements IAuthService {
-  private readonly employee = signal<Employee | null>(null);
-  private readonly ended = signal(false);
-
-  readonly currentEmployee = this.employee.asReadonly();
-  readonly isAuthenticated = computed(() => this.employee() !== null);
-  readonly accessToken = signal<string | null>(null).asReadonly();
-  readonly sessionEnded = this.ended.asReadonly();
-
-  login(): Observable<Employee> {
-    this.signIn();
-
-    return of(SIGNED_IN_EMPLOYEE);
-  }
-
-  signIn(): void {
-    this.employee.set(SIGNED_IN_EMPLOYEE);
-    this.ended.set(false);
-  }
-
-  logout(): void {
-    this.employee.set(null);
-  }
-
-  endSessionElsewhere(): void {
-    this.ended.set(true);
-    this.employee.set(null);
-  }
-}
-
 describe('LoginComponent', () => {
   let component: LoginComponent;
   let fixture: ComponentFixture<LoginComponent>;
