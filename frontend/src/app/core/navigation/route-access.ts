@@ -15,6 +15,14 @@ import {
 export const DEFAULT_SIGNED_IN_ROUTE = '/sale';
 
 /**
+ * Where a device goes when it has no session: turned away by the gate, signed
+ * out deliberately from the account menu, or torn down because the session
+ * ended elsewhere (`session-teardown.service.ts`). One constant for all three,
+ * so the route the app falls back to is stated once.
+ */
+export const LOGIN_ROUTE = '/login';
+
+/**
  * Everything this employee's identity earns them, nav bar and account menu
  * together. The shell renders those two in separate places; the gate only
  * cares that an item is one they'd see somewhere.
