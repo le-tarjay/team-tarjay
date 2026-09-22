@@ -243,6 +243,27 @@ describe('LoginComponent', () => {
     expect(login).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The one path that empties the message slot without a keystroke: the
+   * employee is rejected, then presses Enter again without touching either
+   * field. No `input` event fires on that retry, so the clear at the top of
+   * `login()` is the only thing that empties the slot — without it the stale
+   * failure sits on screen for the whole of the next in-flight request.
+   */
+  it('should clear a previous failure when the same credentials are resubmitted', () => {
+    fillCredentials('cashier', 'wrong-pin');
+    submit();
+
+    expect(alertText()).toBe(INVALID_CREDENTIALS_MESSAGE);
+
+    const inFlight = new Subject<Employee>();
+    vi.spyOn(authService, 'login').mockReturnValue(inFlight.asObservable());
+
+    submit();
+
+    expect(alertText()).toBe('');
+  });
+
   it('should stop the loading state once a failed sign-in returns', () => {
     const inFlight = new Subject<Employee>();
     vi.spyOn(authService, 'login').mockReturnValue(inFlight.asObservable());
@@ -477,10 +498,16 @@ describe('LoginComponent', () => {
     });
 
     /**
-     * The screen knows who was signed out — it is the same service the
-     * explanation is read from — and still must not put them in the field.
+     * A markup-leak check, and only that. The screen cannot know who was
+     * signed out — the teardown has already nulled `currentEmployee`, and
+     * `ngOnInit` redirects whenever `isAuthenticated()`, so Login never
+     * renders with anyone signed in. What this asserts is that no identifier
+     * of the previous employee reaches the rendered DOM by any route,
+     * including a value or attribute the field assertions alone would miss.
+     * The blank-and-focused guarantee itself is carried by the three tests
+     * above.
      */
-    it('never carries the signed-out employee into the field or the markup', async () => {
+    it('leaves no trace of the previous employee in the rendered markup', async () => {
       await returnAfterSessionEnded();
 
       const compiled = fixture.nativeElement as HTMLElement;
