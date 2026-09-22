@@ -7,6 +7,7 @@ import {
   REJECTED_CREDENTIAL_MESSAGE,
   SESSION_END_OBSERVATION_TIMEOUT_MS,
   SESSION_ENDED_ELSEWHERE_PATTERN,
+  SESSION_REFRESH_INTERVAL_MS,
 } from '../../fixtures/session';
 
 /**
@@ -36,6 +37,12 @@ import {
 
 interface Device {
   readonly page: Page;
+  /**
+   * When this terminal's sign-in landed, which is also when its own refresh
+   * timer started. Tests that depend on still being inside the refresh window
+   * bound themselves against this rather than assuming the runner was quick.
+   */
+  readonly signedInAt: number;
   readonly close: () => Promise<void>;
 }
 
@@ -53,7 +60,7 @@ async function signInOnDevice(browser: Browser, employee: SeededEmployee): Promi
   await signIn(page, employee);
   await expect(page).toHaveURL(SIGNED_IN_URL);
 
-  return { page, close: () => context.close() };
+  return { page, signedInAt: Date.now(), close: () => context.close() };
 }
 
 /** One sample of what a terminal is showing. */
@@ -130,7 +137,12 @@ async function expectSessionEndedExplanation(page: Page): Promise<void> {
   // nothing. A terminal bounced by a colleague signing in has done nothing
   // wrong, and being told its credential was rejected would send the employee
   // to fix something that is not broken.
-  await expect(alert).not.toHaveText(REJECTED_CREDENTIAL_MESSAGE);
+  //
+  // `not.toContainText`, not `not.toHaveText`: full-string equality is already
+  // settled by the assertion above, so the negated form of it could never
+  // fail and would not catch the case this line exists for — both messages
+  // rendered into the one slot.
+  await expect(alert).not.toContainText(REJECTED_CREDENTIAL_MESSAGE);
 }
 
 /** Shared terminals: the next person at one is usually somebody else. */
@@ -228,6 +240,24 @@ test.describe('single active session', () => {
           // still alive, so an action inside the refresh window succeeds
           // (design row 6, corrected 2026-09-18 for exactly this reason — the
           // superseded mechanism would have failed it).
+          //
+          // "Inside the refresh window" is an assumption about the runner, so
+          // bound it rather than trust it. Device A's timer started at its own
+          // sign-in, so if everything above took less than one interval, A has
+          // not refreshed even once and the session cannot already have ended.
+          // A slow runner that blows through that budget makes the click's
+          // outcome meaningless, and without this line it would present as a
+          // failure of the behaviour instead of a failure of the timing.
+          const windowUsedMs = Date.now() - deviceA.signedInAt;
+          expect(
+            windowUsedMs,
+            `Device A's first refresh was due ${SESSION_REFRESH_INTERVAL_MS}ms after its ` +
+              `sign-in, and setting this test up took ${windowUsedMs}ms. The action below ` +
+              'is only a test of "inside the refresh window" if it happens before that ' +
+              'tick, so this run proves nothing about the behaviour either way — treat it ' +
+              'as a slow runner, not as a defect.',
+          ).toBeLessThan(SESSION_REFRESH_INTERVAL_MS);
+
           await firstResult.click();
 
           await expect(continueToPayment).toBeEnabled();
