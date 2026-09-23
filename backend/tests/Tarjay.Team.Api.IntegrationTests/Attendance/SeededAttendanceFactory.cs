@@ -12,10 +12,10 @@ namespace Tarjay.Team.Api.IntegrationTests.Attendance;
 /// The real app, with its attendance store starting from records a test chose.
 /// </summary>
 /// <remarks>
-/// Nothing in the API can create an attendance record yet — clock-in and the break transitions
-/// arrive in a later story — so the store is seeded through its constructor instead. It is the same
-/// in-memory store the app registers, just not empty; everything between the request and the store
-/// is the app's own.
+/// Seeding through the store's constructor puts an employee in any status in one step, and can hold
+/// shapes the endpoints would take several requests to build — completed cycles from earlier in the
+/// day, an earlier break already over. It is the same in-memory store the app registers, just not
+/// empty; everything between the request and the store is the app's own.
 /// </remarks>
 public sealed class SeededAttendanceFactory(params AttendanceRecord[] records) : ApiWebApplicationFactory
 {
