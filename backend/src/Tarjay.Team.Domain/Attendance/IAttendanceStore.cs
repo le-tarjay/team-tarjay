@@ -7,7 +7,7 @@ namespace Tarjay.Team.Domain.Attendance;
 /// <remarks>
 /// <para>
 /// Every member takes the Employee ID it is asked about rather than assuming the caller. That is
-/// deliberate. The shift-status endpoint only ever passes the calling employee's own ID, but a
+/// deliberate. The attendance endpoints only ever pass the calling employee's own ID, but a
 /// later reader — manager-approval eligibility — needs to ask whether a <em>given</em> manager is
 /// on duty, which is a different question against the same data. Shaping the interface for that
 /// now costs a parameter; reopening it later would cost a change to every implementation.
@@ -32,4 +32,45 @@ public interface IAttendanceStore
     /// <param name="employeeId">The Employee ID to ask about — any employee, not only the caller.</param>
     /// <returns><see langword="true"/> only when the employee's status is <see cref="ShiftStatus.OnShift"/>.</returns>
     public bool IsOnDuty(string employeeId);
+
+    /// <summary>
+    /// Clocks the employee in: off shift to on shift, starting a new active record stamped now.
+    /// </summary>
+    /// <param name="employeeId">The Employee ID to clock in.</param>
+    /// <returns><see cref="ShiftStatus.OnShift"/>, the status the employee is now in.</returns>
+    /// <exception cref="ShiftTransitionRejectedException">
+    /// The employee already has an active record — on shift or on break. Nothing is changed.
+    /// </exception>
+    public ShiftStatus ClockIn(string employeeId);
+
+    /// <summary>
+    /// Clocks the employee out: on shift or on break to off shift, closing the active record now.
+    /// A break still running is ended at the same moment, because a break is part of the shift.
+    /// </summary>
+    /// <param name="employeeId">The Employee ID to clock out.</param>
+    /// <returns><see cref="ShiftStatus.OffShift"/>, the status the employee is now in.</returns>
+    /// <exception cref="ShiftTransitionRejectedException">
+    /// The employee is already off shift. Nothing is changed.
+    /// </exception>
+    public ShiftStatus ClockOut(string employeeId);
+
+    /// <summary>Starts a break: on shift to on break, opening a break on the active record now.</summary>
+    /// <param name="employeeId">The Employee ID starting a break.</param>
+    /// <returns><see cref="ShiftStatus.OnBreak"/>, the status the employee is now in.</returns>
+    /// <exception cref="ShiftTransitionRejectedException">
+    /// The employee is off shift, or already on break. Nothing is changed.
+    /// </exception>
+    public ShiftStatus StartBreak(string employeeId);
+
+    /// <summary>
+    /// Ends a break: on break straight back to on shift, closing the open break now. Never passes
+    /// through off shift — the active record stays active throughout.
+    /// </summary>
+    /// <param name="employeeId">The Employee ID ending a break.</param>
+    /// <returns><see cref="ShiftStatus.OnShift"/>, the status the employee is now in.</returns>
+    /// <exception cref="ShiftTransitionRejectedException">
+    /// The employee is not on break — off shift, or on shift with no break running. Nothing is
+    /// changed.
+    /// </exception>
+    public ShiftStatus EndBreak(string employeeId);
 }
