@@ -13,6 +13,7 @@ public class Program
 
         builder.Services.AddContactStore();
         builder.Services.AddAttendance();
+        builder.Services.AddSchedule();
         builder.Services.AddEmployeeIdentity(builder.Configuration);
         builder.Services.AddEmployeeTokenAuthentication(builder.Configuration);
         builder.Services.AddRequestValidation();
