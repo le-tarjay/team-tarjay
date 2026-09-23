@@ -9,7 +9,14 @@ import {
   SHARED_NAV_ITEMS,
 } from '../../navigation/role-navigation';
 import { LOGIN_ROUTE } from '../../navigation/route-access';
-import { AUTH_SERVICE } from '../../tokens';
+import { ShiftStatus } from '../../models/shift/shift-status.model';
+import { shiftStatusLabel } from '../../shift/shift-status-label';
+import { AUTH_SERVICE, SHIFT_SERVICE } from '../../tokens';
+
+interface ShiftIndicator {
+  status: ShiftStatus;
+  label: string;
+}
 
 @Component({
   selector: 'app-shell',
@@ -20,6 +27,7 @@ import { AUTH_SERVICE } from '../../tokens';
 })
 export class AppShellComponent {
   private readonly authService = inject(AUTH_SERVICE);
+  private readonly shiftService = inject(SHIFT_SERVICE);
   private readonly router = inject(Router);
 
   private readonly currentEmployee = this.authService.currentEmployee;
@@ -40,6 +48,22 @@ export class AppShellComponent {
     }
 
     return `${employee.name} · ${employee.department} · ${employeeRoleLabel(employee.role)}`;
+  });
+
+  /**
+   * The dot and label beside the account menu. `null` — and so nothing on
+   * screen — until the server has answered, and again if a read fails: the
+   * header never shows a shift status the server has not confirmed, off shift
+   * included (API map, design rows D1 and D15).
+   */
+  protected readonly shiftIndicator = computed<ShiftIndicator | null>(() => {
+    const shift = this.shiftService.currentShift();
+
+    if (!shift) {
+      return null;
+    }
+
+    return { status: shift.status, label: shiftStatusLabel(shift.status) };
   });
 
   /**

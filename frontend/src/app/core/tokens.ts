@@ -5,9 +5,11 @@ import { IBuyerService } from './buyer/buyer.service';
 import { IPaymentService } from './payment/payment.service';
 import { IProductService } from './product/product.service';
 import { ISalesService } from './sales/sales.service';
+import { IShiftService } from './shift/shift.service';
 
 export const AUTH_SERVICE = new InjectionToken<IAuthService>('AUTH_SERVICE');
 export const BUYER_SERVICE = new InjectionToken<IBuyerService>('BUYER_SERVICE');
 export const PAYMENT_SERVICE = new InjectionToken<IPaymentService>('PAYMENT_SERVICE');
 export const PRODUCT_SERVICE = new InjectionToken<IProductService>('PRODUCT_SERVICE');
 export const SALES_SERVICE = new InjectionToken<ISalesService>('SALES_SERVICE');
+export const SHIFT_SERVICE = new InjectionToken<IShiftService>('SHIFT_SERVICE');

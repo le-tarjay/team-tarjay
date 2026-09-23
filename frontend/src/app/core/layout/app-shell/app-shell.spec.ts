@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
@@ -7,7 +9,10 @@ import { vi } from 'vitest';
 import { AppShellComponent } from './app-shell';
 import { IAuthService } from '../../auth/auth.service';
 import { Employee, EmployeeRole } from '../../models/auth/employee.model';
-import { AUTH_SERVICE } from '../../tokens';
+import { ShiftStatus } from '../../models/shift/shift-status.model';
+import { ShiftService } from '../../shift/shift.service';
+import { StubShiftService } from '../../shift/testing/stub-shift.service';
+import { AUTH_SERVICE, SHIFT_SERVICE } from '../../tokens';
 
 /**
  * `MockAuthService` resolves exactly one hardcoded employee — an Associate in
@@ -65,6 +70,7 @@ describe('AppShellComponent', () => {
   let component: AppShellComponent;
   let fixture: ComponentFixture<AppShellComponent>;
   let authService: StubAuthService;
+  let shiftService: StubShiftService;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -76,12 +82,17 @@ describe('AppShellComponent', () => {
           provide: AUTH_SERVICE,
           useClass: StubAuthService,
         },
+        {
+          provide: SHIFT_SERVICE,
+          useClass: StubShiftService,
+        },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AppShellComponent);
     component = fixture.componentInstance;
     authService = TestBed.inject(AUTH_SERVICE) as StubAuthService;
+    shiftService = TestBed.inject(SHIFT_SERVICE) as StubShiftService;
     fixture.detectChanges();
   });
 
@@ -122,6 +133,14 @@ describe('AppShellComponent', () => {
 
   function accountToggle(): HTMLButtonElement {
     return fixture.nativeElement.querySelector('.dropdown-toggle') as HTMLButtonElement;
+  }
+
+  function shiftIndicator(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[role="status"]');
+  }
+
+  function shiftIndicatorDot(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('.shift-indicator-dot');
   }
 
   function openAccountMenu(): void {
@@ -365,6 +384,61 @@ describe('AppShellComponent', () => {
     });
   });
 
+  describe('shift status indicator', () => {
+    function reportShift(status: ShiftStatus): void {
+      shiftService.report(status);
+      fixture.detectChanges();
+    }
+
+    it('renders no indicator while no shift status is held', () => {
+      signIn();
+
+      expect(shiftIndicator()).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toMatch(/on the clock|on break/i);
+    });
+
+    it.each<{ status: ShiftStatus; label: string; dot: string }>([
+      { status: 'OffShift', label: 'Not on the clock', dot: 'shift-indicator-dot-off' },
+      { status: 'OnShift', label: 'On the clock', dot: 'shift-indicator-dot-on' },
+      { status: 'OnBreak', label: 'On break', dot: 'shift-indicator-dot-break' },
+    ])('reads "$label" with its own dot for $status', ({ status, label, dot }) => {
+      signIn();
+      reportShift(status);
+
+      expect(shiftIndicator()?.textContent?.trim()).toBe(label);
+      expect(shiftIndicatorDot()?.classList).toContain(dot);
+    });
+
+    it('follows the held status as it changes', () => {
+      signIn();
+      reportShift('OffShift');
+      reportShift('OnShift');
+
+      expect(shiftIndicator()?.textContent?.trim()).toBe('On the clock');
+
+      reportShift('OnBreak');
+
+      expect(shiftIndicator()?.textContent?.trim()).toBe('On break');
+    });
+
+    it('removes the indicator when the held status is cleared, not keeping a stale one', () => {
+      signIn();
+      reportShift('OnShift');
+
+      shiftService.clear();
+      fixture.detectChanges();
+
+      expect(shiftIndicator()).toBeNull();
+    });
+
+    it('sits beside the account menu button', () => {
+      signIn();
+      reportShift('OnShift');
+
+      expect(shiftIndicator()?.nextElementSibling?.contains(accountToggle())).toBe(true);
+    });
+  });
+
   /**
    * `../../../../../e2e` locates every element by role and accessible name
    * only, so a markup change here that drops one breaks a suite this surface
@@ -383,6 +457,19 @@ describe('AppShellComponent', () => {
       expect(link.getAttribute('href')).toBe(`/${label.toLowerCase()}`);
     });
 
+    it('exposes the shift indicator as a status region carrying its label', () => {
+      signIn();
+      shiftService.report('OffShift');
+      fixture.detectChanges();
+
+      const indicator = fixture.nativeElement.querySelector('[role="status"]') as HTMLElement;
+
+      expect(indicator.textContent?.trim()).toBe('Not on the clock');
+      expect(indicator.querySelector('.shift-indicator-dot')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      );
+    });
+
     it('keeps the account toggle and the logout control named', () => {
       signIn();
 
@@ -392,5 +479,107 @@ describe('AppShellComponent', () => {
 
       expect(accountMenuLabels()).toContain('Logout');
     });
+  });
+});
+
+/**
+ * The header and the real `ShiftService` together, with only HTTP stubbed: the
+ * path from a sign-in, through the read it triggers, to what the header shows.
+ * The block above drives `currentShift` directly; this one proves the real
+ * service feeds it.
+ */
+describe('AppShellComponent shift indicator, fed by the real ShiftService', () => {
+  const SHIFT_URL = '/v1/employees/me/shift';
+
+  let fixture: ComponentFixture<AppShellComponent>;
+  let authService: StubAuthService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [AppShellComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: AUTH_SERVICE,
+          useClass: StubAuthService,
+        },
+        {
+          provide: SHIFT_SERVICE,
+          useExisting: ShiftService,
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AppShellComponent);
+    authService = TestBed.inject(AUTH_SERVICE) as StubAuthService;
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  function signIn(): void {
+    authService.signIn({
+      id: '10041',
+      name: 'Avery Brooks',
+      role: 'Associate',
+      department: 'Grocery',
+      jobFunction: 'Register',
+    });
+    TestBed.tick();
+    fixture.detectChanges();
+  }
+
+  function shiftIndicatorText(): string | null {
+    const indicator = fixture.nativeElement.querySelector('[role="status"]') as HTMLElement | null;
+
+    return indicator ? (indicator.textContent?.trim() ?? '') : null;
+  }
+
+  it('shows no indicator after sign-in until the first read lands, then the right label', () => {
+    signIn();
+
+    const request = httpMock.expectOne(SHIFT_URL);
+
+    expect(shiftIndicatorText()).toBeNull();
+
+    request.flush({ data: { status: 'OnBreak', onDuty: false }, meta: {} });
+    fixture.detectChanges();
+
+    expect(shiftIndicatorText()).toBe('On break');
+  });
+
+  it('shows no indicator when the first read fails', () => {
+    signIn();
+
+    httpMock.expectOne(SHIFT_URL).flush(null, { status: 503, statusText: 'Service Unavailable' });
+    fixture.detectChanges();
+
+    expect(shiftIndicatorText()).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toMatch(/on the clock|on break/i);
+  });
+
+  it('updates the label from a clock-in response', () => {
+    signIn();
+    httpMock
+      .expectOne(SHIFT_URL)
+      .flush({ data: { status: 'OffShift', onDuty: false }, meta: {} });
+    fixture.detectChanges();
+
+    expect(shiftIndicatorText()).toBe('Not on the clock');
+
+    TestBed.inject(ShiftService).clockIn().subscribe();
+    httpMock
+      .expectOne('/v1/employees/me/clock-in')
+      .flush({ data: { status: 'OnShift', onDuty: true }, meta: {} });
+    fixture.detectChanges();
+
+    expect(shiftIndicatorText()).toBe('On the clock');
   });
 });

@@ -11,12 +11,14 @@ import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
 import { SessionTeardownService } from './core/auth/session-teardown.service';
+import { ShiftService } from './core/shift/shift.service';
 import {
   AUTH_SERVICE,
   BUYER_SERVICE,
   PAYMENT_SERVICE,
   PRODUCT_SERVICE,
   SALES_SERVICE,
+  SHIFT_SERVICE,
 } from './core/tokens';
 import { MockBuyerService } from './mocks/mock-buyer.service';
 import { MockPaymentService } from './mocks/mock-payment.service';
@@ -56,6 +58,14 @@ export const appConfig: ApplicationConfig = {
     {
       provide: SALES_SERVICE,
       useClass: MockSalesService,
+    },
+    {
+      // Real from the start — its endpoints existed before it did, so there
+      // was never a mock to swap out. `useExisting` for the reason AUTH_SERVICE
+      // gives: the held shift is state, and a second instance would be a
+      // second, divergent copy of it.
+      provide: SHIFT_SERVICE,
+      useExisting: ShiftService,
     },
   ],
 };

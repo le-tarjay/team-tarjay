@@ -33,6 +33,19 @@
       </span>
     }
 
+    @if (shiftIndicator(); as shift) {
+      <span class="shift-indicator small" role="status">
+        <span
+          class="shift-indicator-dot"
+          [class.shift-indicator-dot-off]="shift.status === 'OffShift'"
+          [class.shift-indicator-dot-on]="shift.status === 'OnShift'"
+          [class.shift-indicator-dot-break]="shift.status === 'OnBreak'"
+          aria-hidden="true"
+        ></span>
+        {{ shift.label }}
+      </span>
+    }
+
     <div class="dropdown">
       <button
         type="button"
