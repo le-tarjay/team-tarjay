@@ -19,9 +19,14 @@ import { AUTH_SERVICE } from '../../tokens';
  */
 class StubAuthService implements IAuthService {
   private readonly employee = signal<Employee | null>(null);
+  private readonly ended = signal(false);
 
   readonly currentEmployee = this.employee.asReadonly();
   readonly isAuthenticated = computed(() => this.employee() !== null);
+
+  /** The shell reads identity and, since LET-134, how the session ended. */
+  readonly accessToken = signal<string | null>(null).asReadonly();
+  readonly sessionEnded = this.ended.asReadonly();
 
   login(): Observable<Employee> {
     return throwError(() => new Error('Not exercised by the app shell.'));
@@ -33,6 +38,17 @@ class StubAuthService implements IAuthService {
 
   signIn(employee: Employee): void {
     this.employee.set(employee);
+  }
+
+  /**
+   * What `SessionTeardownService` observes and then acts on: the signal flips,
+   * and the teardown clears the session behind it. Both halves are driven here
+   * because the shell's own reaction — closing its account menu — has to hold
+   * while the redirect is still in flight and the shell is still on screen.
+   */
+  endSessionElsewhere(): void {
+    this.ended.set(true);
+    this.employee.set(null);
   }
 }
 
@@ -302,6 +318,50 @@ describe('AppShellComponent', () => {
       expect(identityText()).toBe('');
       expect(navLabels()).toEqual(SHARED_LABELS);
       expect(navigate).toHaveBeenCalledWith('/login');
+    });
+  });
+
+  /**
+   * The shell's half of LET-134's teardown. The redirect itself, and clearing
+   * the session that empties this header, are `SessionTeardownService`'s — see
+   * `core/auth/session-teardown.service.spec.ts`. What the shell owns is the one
+   * open layer that lives above the routed screens and therefore outlives them
+   * until the redirect resolves.
+   */
+  describe('a session ended elsewhere', () => {
+    it('clears the header identity and reverts the nav, with no employee action', () => {
+      signIn({ role: 'StoreManager' });
+
+      expect(identityText()).not.toBe('');
+
+      authService.endSessionElsewhere();
+      fixture.detectChanges();
+
+      expect(identityText()).toBe('');
+      expect(navLabels()).toEqual(SHARED_LABELS);
+    });
+
+    it('closes an open account menu rather than leaving it over an empty header', () => {
+      signIn({ role: 'StoreManager' });
+      openAccountMenu();
+
+      expect(accountToggle().getAttribute('aria-expanded')).toBe('true');
+
+      authService.endSessionElsewhere();
+      fixture.detectChanges();
+
+      expect(accountToggle().getAttribute('aria-expanded')).toBe('false');
+      expect(accountMenuLabels()).toEqual([]);
+    });
+
+    it('shows no reconnecting or transitional message in place of the identity', () => {
+      signIn({ role: 'StoreManager' });
+
+      authService.endSessionElsewhere();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/reconnect/i);
+      expect(fixture.nativeElement.textContent).not.toMatch(/signing you out/i);
     });
   });
 

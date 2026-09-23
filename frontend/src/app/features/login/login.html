@@ -22,13 +22,14 @@
           </label>
 
           <input
+            #employeeIdField
             id="employeeId"
             name="employeeId"
             type="text"
             class="form-control form-control-lg"
             autocomplete="username"
             [ngModel]="employeeId()"
-            (ngModelChange)="employeeId.set($event)"
+            (ngModelChange)="enterEmployeeId($event)"
           />
         </div>
 
@@ -44,7 +45,7 @@
             class="form-control form-control-lg"
             autocomplete="current-password"
             [ngModel]="pin()"
-            (ngModelChange)="pin.set($event)"
+            (ngModelChange)="enterPin($event)"
           />
         </div>
 

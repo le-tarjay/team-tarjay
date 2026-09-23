@@ -53,4 +53,33 @@ public sealed class KeycloakOptions
 
     /// <summary>The claim carrying the employee's job function. Configurable, as with <see cref="RoleClaim"/>.</summary>
     public string JobFunctionClaim { get; set; } = "job_function";
+
+    /// <summary>
+    /// The separate, confidential client the API authenticates as to administer sessions. Bound
+    /// from the <c>Identity:Admin</c> configuration section.
+    /// </summary>
+    public KeycloakAdminOptions Admin { get; set; } = new();
+}
+
+/// <summary>
+/// The confidential client whose service account holds <c>manage-users</c>, used to end an
+/// employee's other sessions when they sign in somewhere new.
+/// </summary>
+/// <remarks>
+/// Deliberately a different client from <see cref="KeycloakOptions.ClientId"/>: employees sign in
+/// through that one, and it holds no administrative rights at all. Emphatically not the compose
+/// stack's bootstrap admin either — no part of this application ever authenticates with that
+/// credential.
+/// </remarks>
+public sealed class KeycloakAdminOptions
+{
+    /// <summary>The confidential client's id, e.g. <c>team-targe-admin</c>.</summary>
+    public string ClientId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The confidential client's secret. Never committed with a real value, and never logged: it
+    /// arrives from the local compose stack's environment locally, and from a secret store in a
+    /// deployed environment.
+    /// </summary>
+    public string ClientSecret { get; set; } = string.Empty;
 }

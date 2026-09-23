@@ -59,6 +59,29 @@ services:
       # would let this file silently override a real change to it.
       Identity__Authority: "http://id:8080"
 
+      # The confidential client the API authenticates as -- via the client-credentials
+      # grant -- to terminate an employee's other sessions at sign-in (LET-129). Its
+      # service account holds `manage-users` and nothing else.
+      #
+      # Both keys live here rather than in appsettings.json, unlike Realm and ClientId
+      # above, and for two different reasons. The secret is a credential and does not
+      # belong in a committed appsettings.json at all. The client id is here to keep the
+      # pair together while nothing in the backend binds an `Identity:Admin` section
+      # yet -- LET-130 adds that binding and consumes these, and may move the non-secret
+      # half into appsettings.json when it does.
+      #
+      # This is emphatically NOT the `id` service's bootstrap admin: that credential is
+      # for the admin console only, and no part of the app authenticates with it.
+      Identity__Admin__ClientId: "team-targe-admin"
+
+      # Local-only and throwaway, exactly like KC_BOOTSTRAP_ADMIN_PASSWORD and the
+      # employees' PINs: this whole stack is a developer's machine, and the realm that
+      # holds the matching secret is itself committed one directory over. A deployed
+      # Keycloak gets a real secret from a secret store -- see CONVENTIONS.md's
+      # Configuration and secrets, which governs the AWS side and forbids exactly that
+      # value ever being committed.
+      Identity__Admin__ClientSecret: "local-development-only-not-a-real-secret"
+
     ports:
       # Published so the `ng serve` inner loop and a developer with curl can reach the
       # API directly, even though `web` proxies it in-network. 8080 on the host is

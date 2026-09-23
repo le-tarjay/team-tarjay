@@ -1,9 +1,16 @@
-import { provideHttpClient } from '@angular/common/http';
-import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import {
+  ApplicationConfig,
+  inject,
+  provideEnvironmentInitializer,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
+import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
+import { SessionTeardownService } from './core/auth/session-teardown.service';
 import {
   AUTH_SERVICE,
   BUYER_SERVICE,
@@ -20,7 +27,13 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient(),
+    provideHttpClient(withInterceptors([bearerTokenInterceptor])),
+    // Eager on purpose: `SessionTeardownService` is a watcher, and nothing in
+    // the app injects it. A session ends on a background timer with nobody on
+    // the call stack, so the thing that reacts has to already exist by then.
+    provideEnvironmentInitializer(() => {
+      inject(SessionTeardownService);
+    }),
     {
       // `useExisting`, not `useClass`: AuthService is `providedIn: 'root'`, and
       // the signed-in employee is session state. A second instance would be a
