@@ -9,7 +9,8 @@ import { AuthService, SESSION_REFRESH_INTERVAL_MS } from './core/auth/auth.servi
 import { AUTHORIZATION_HEADER } from './core/auth/bearer-token.interceptor';
 import { LOGIN_ROUTE } from './core/navigation/route-access';
 import { SaleService } from './core/sale/sale.service';
-import { AUTH_SERVICE } from './core/tokens';
+import { ShiftService } from './core/shift/shift.service';
+import { AUTH_SERVICE, SHIFT_SERVICE } from './core/tokens';
 import { MockAuthService } from './mocks/mock-auth.service';
 
 const SIGN_IN_URL = '/v1/employees/sign-in';
@@ -40,6 +41,14 @@ describe('appConfig', () => {
 
   it('resolves AUTH_SERVICE to the same instance as the root AuthService', () => {
     expect(TestBed.inject(AUTH_SERVICE)).toBe(TestBed.inject(AuthService));
+  });
+
+  /**
+   * The header, Home screen and nav gate all read the one held shift, so they
+   * must all reach the one root instance holding it.
+   */
+  it('resolves SHIFT_SERVICE to the same instance as the root ShiftService', () => {
+    expect(TestBed.inject(SHIFT_SERVICE)).toBe(TestBed.inject(ShiftService));
   });
 
   /**

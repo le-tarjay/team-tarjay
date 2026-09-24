@@ -23,6 +23,37 @@
   }
 }
 
+// The header's shift status: grey off shift, green on shift, amber on break, as
+// in the mockup (Team-Targét.dc.html, header status). The mockup's green and
+// amber are design-system tokens whose values are not in the export, so
+// Bootstrap's own success and warning stand in; the grey is the mockup's. The
+// label carries the meaning too, so colour is never the only signal.
+.shift-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.shift-indicator-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.shift-indicator-dot-off {
+  background: #9a9a9a;
+}
+
+.shift-indicator-dot-on {
+  background: var(--bs-success);
+}
+
+.shift-indicator-dot-break {
+  background: var(--bs-warning);
+}
+
 .app-main {
   min-height: calc(100vh - 56px);
   background: #f5f6f8;
