@@ -1,4 +1,4 @@
-import { shiftHours, shiftTimeRange } from './scheduled-shift-display';
+import { hoursLabel, shiftHourCount, shiftHours, shiftTimeRange } from './scheduled-shift-display';
 import { WorkedShift } from '../models/schedule/scheduled-shift.model';
 
 function worked(start: string, end: string): WorkedShift {
@@ -27,5 +27,22 @@ describe('scheduled shift display', () => {
     ['09:00', '15:00', '6h'],
   ])('shows the length of %s–%s as "%s"', (start, end, expected) => {
     expect(shiftHours(worked(start, end))).toBe(expected);
+  });
+
+  it.each([
+    ['09:00', '17:00', 8],
+    ['07:00', '15:30', 8.5],
+    ['09:00', '09:20', 1 / 3],
+  ])('counts %s–%s as %d hours', (start, end, expected) => {
+    expect(shiftHourCount(worked(start, end))).toBeCloseTo(expected);
+  });
+
+  it.each([
+    [40, '40h'],
+    [38.5, '38.5h'],
+    [0, '0h'],
+    [1 / 3, '0.33h'],
+  ])('labels %d hours as "%s"', (hours, expected) => {
+    expect(hoursLabel(hours)).toBe(expected);
   });
 });

@@ -2,6 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { employeeRoleLabel } from '../../navigation/employee-role-label';
+import { MY_SCHEDULE_NAV_ITEM, myScheduleEntryPoint } from '../../navigation/my-schedule-entry';
 import {
   adminNavItems,
   NavItem,
@@ -67,9 +68,24 @@ export class AppShellComponent {
   });
 
   /**
+   * Where My Schedule is offered follows the shift the server last reported:
+   * the account menu on shift, the nav off shift or on break.
+   */
+  private readonly myScheduleEntry = computed(() =>
+    myScheduleEntryPoint(this.shiftService.currentShift()?.status ?? null),
+  );
+
+  protected readonly myScheduleItem = MY_SCHEDULE_NAV_ITEM;
+
+  protected readonly showsMyScheduleInAccountMenu = computed(
+    () => this.myScheduleEntry() === 'account-menu',
+  );
+
+  /**
    * The shared items always, then exactly one role-specific item appended.
    * Signing out drops the tail and leaves the shared head untouched, which is
-   * the same nav the shell showed before anyone signed in.
+   * the same nav the shell showed before anyone signed in. Off shift or on
+   * break, My Schedule follows the role-specific item.
    */
   protected readonly navItems = computed<readonly NavItem[]>(() => {
     const employee = this.currentEmployee();
@@ -78,7 +94,9 @@ export class AppShellComponent {
       return SHARED_NAV_ITEMS;
     }
 
-    return [...SHARED_NAV_ITEMS, roleSpecificNavItem(employee)];
+    const items = [...SHARED_NAV_ITEMS, roleSpecificNavItem(employee)];
+
+    return this.myScheduleEntry() === 'nav' ? [...items, MY_SCHEDULE_NAV_ITEM] : items;
   });
 
   protected readonly accountMenuItems = computed<readonly NavItem[]>(() => {
@@ -116,6 +134,10 @@ export class AppShellComponent {
    */
   protected toggleAccountMenu(): void {
     this.isAccountMenuOpen.update((isOpen) => !isOpen);
+  }
+
+  protected closeAccountMenu(): void {
+    this.isAccountMenuOpen.set(false);
   }
 
   protected logout(): void {

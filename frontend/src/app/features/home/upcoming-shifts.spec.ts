@@ -1,4 +1,4 @@
-import { localIsoDate, upcomingShifts } from './upcoming-shifts';
+import { upcomingShifts } from './upcoming-shifts';
 import {
   ScheduledDayOff,
   ScheduledShift,
@@ -109,12 +109,5 @@ describe('upcomingShifts', () => {
     expect(upcomingShifts([worked('2026-09-24', 'Thursday')], TODAY)).toHaveLength(1);
     expect(upcomingShifts([off('2026-09-24', 'Thursday')], TODAY)).toEqual([]);
     expect(upcomingShifts([], TODAY)).toEqual([]);
-  });
-});
-
-describe('localIsoDate', () => {
-  it('uses the terminal\'s own calendar date, zero-padded', () => {
-    expect(localIsoDate(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
-    expect(localIsoDate(new Date(2026, 11, 31, 0, 0))).toBe('2026-12-31');
   });
 });

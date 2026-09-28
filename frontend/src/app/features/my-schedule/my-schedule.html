@@ -1,0 +1,31 @@
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-end gap-3 mb-4">
+    <div>
+      <h1 class="h3 fw-bold mb-1">My schedule</h1>
+      <p class="text-secondary mb-0">
+        Your shifts this week. Scheduled hours are informational — they don’t clock you in.
+      </p>
+    </div>
+
+    @if (!isLoading() && !errorMessage()) {
+      <div class="week-hours text-end flex-shrink-0" role="group" aria-labelledby="week-hours-label">
+        <div id="week-hours-label" class="week-hours-label">This week</div>
+        <div class="week-hours-total">{{ weekHours() }}</div>
+      </div>
+    }
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" role="alert">
+      {{ errorMessage() }}
+    </div>
+  } @else {
+    <app-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [isLoading]="isLoading()"
+      [enableSearch]="false"
+      emptyMessage="No schedule for this week."
+    />
+  }
+</div>

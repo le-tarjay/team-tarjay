@@ -6,6 +6,7 @@ import { activeSaleGuard } from './core/sale/active-sale.guard';
 import { BuyersComponent } from './features/buyers/buyers';
 import { HomeComponent } from './features/home/home';
 import { LoginComponent } from './features/login/login';
+import { MyScheduleComponent } from './features/my-schedule/my-schedule';
 import { PaymentComponent } from './features/payment/payment';
 import { ProductsComponent } from './features/products/products';
 import { SaleBuilderComponent } from './features/sale-builder/sale-builder.component';
@@ -31,6 +32,10 @@ export const routes: Routes = [
       {
         path: 'home',
         component: HomeComponent,
+      },
+      {
+        path: 'schedule',
+        component: MyScheduleComponent,
       },
       {
         path: 'sale',

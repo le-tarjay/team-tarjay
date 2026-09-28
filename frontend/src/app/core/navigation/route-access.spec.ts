@@ -1,4 +1,9 @@
-import { DEFAULT_SIGNED_IN_ROUTE, isRouteAllowedForEmployee, navItemsFor } from './route-access';
+import {
+  DEFAULT_SIGNED_IN_ROUTE,
+  isRouteAllowedForEmployee,
+  MY_SCHEDULE_ROUTE,
+  navItemsFor,
+} from './route-access';
 import { Employee, EmployeeRole } from '../models/auth/employee.model';
 
 const ALL_ROLES: readonly EmployeeRole[] = [
@@ -96,6 +101,10 @@ describe('route access', () => {
   describe('a route no nav item governs', () => {
     it.each(ALL_ROLES)('leaves /payment to the guards that do cover it, for a %s', (role) => {
       expect(isRouteAllowedForEmployee(employee({ role }), '/payment')).toBe(true);
+    });
+
+    it.each(ALL_ROLES)('lets a %s reach My Schedule, which every employee is offered', (role) => {
+      expect(isRouteAllowedForEmployee(employee({ role }), MY_SCHEDULE_ROUTE)).toBe(true);
     });
   });
 
