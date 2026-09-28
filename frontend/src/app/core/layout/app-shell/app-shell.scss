@@ -23,6 +23,13 @@
   }
 }
 
+// The state's way back to work — Clock in off shift, End break on break — is
+// the menu's primary action in the design asset. Weight rather than colour, so
+// it still reads as a menu item beside Clock out.
+.shift-action-primary {
+  font-weight: 600;
+}
+
 // The header's shift status: grey off shift, green on shift, amber on break, as
 // in the mockup (Team-Targét.dc.html, header status). The mockup's green and
 // amber are design-system tokens whose values are not in the export, so
