@@ -88,6 +88,6 @@ function navItemLabelForRoute(url: string): string | null {
  * `RouterStateSnapshot.url` is the whole URL — query string and fragment
  * included — while a nav item's `route` is just the path.
  */
-function routePath(url: string): string {
+export function routePath(url: string): string {
   return url.split(/[?#]/)[0] ?? url;
 }

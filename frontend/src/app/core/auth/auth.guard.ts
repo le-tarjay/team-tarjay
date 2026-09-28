@@ -9,10 +9,12 @@ import {
 
 import {
   DEFAULT_SIGNED_IN_ROUTE,
+  HOME_ROUTE,
   isRouteAllowedForEmployee,
   LOGIN_ROUTE,
 } from '../navigation/route-access';
-import { AUTH_SERVICE } from '../tokens';
+import { isRouteAllowedForShift } from '../navigation/shift-navigation';
+import { AUTH_SERVICE, SHIFT_SERVICE } from '../tokens';
 import { returnUrlParams } from './return-url';
 
 /**
@@ -26,12 +28,23 @@ export const authGuard: CanActivateFn & CanActivateChildFn = (
   state: RouterStateSnapshot,
 ) => {
   const authService = inject(AUTH_SERVICE);
+  const shiftService = inject(SHIFT_SERVICE);
   const router = inject(Router);
 
   const employee = authService.currentEmployee();
 
   if (!employee) {
     return router.createUrlTree([LOGIN_ROUTE], { queryParams: returnUrlParams(state.url) });
+  }
+
+  /**
+   * Off shift or on break, anything but Home and My schedule goes to Home.
+   * Home explains the state, so there is no interstitial (API map, design row
+   * D10). Checked before the role gate so an off-duty employee is never sent
+   * to Sale first and bounced a second time.
+   */
+  if (!isRouteAllowedForShift(shiftService.currentShift(), state.url)) {
+    return router.createUrlTree([HOME_ROUTE]);
   }
 
   if (isRouteAllowedForEmployee(employee, state.url, declaredNavItem(route))) {

@@ -16,6 +16,8 @@ import { MockAuthService } from './mocks/mock-auth.service';
 
 const SIGN_IN_URL = '/v1/employees/sign-in';
 
+const SHIFT_URL = '/v1/employees/me/shift';
+
 /** The default `SESSION_REFRESH_CONFIG` resolves to this. */
 const TOKEN_ENDPOINT = 'http://localhost:8080/realms/team-targe/protocol/openid-connect/token';
 
@@ -140,6 +142,42 @@ describe('appConfig', () => {
    * `invalid_grant`, teardown — and injects nothing but the service under
    * sign-in.
    */
+  /**
+   * `OffDutyRedirectService` is a watcher nothing injects, like
+   * `SessionTeardownService`. This proves the running app brings it to life:
+   * a sign-in, the shift read it triggers, and an off-shift answer move the
+   * device to Home with nothing but the app's own providers.
+   */
+  it('moves an employee to Home when the running app reads them as off shift', () => {
+    const authService = TestBed.inject(AuthService);
+    const httpMock = TestBed.inject(HttpTestingController);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+
+    authService.login({ employeeId: '100482', pin: '8321' }).subscribe();
+    httpMock.expectOne(SIGN_IN_URL).flush({
+      data: {
+        employeeId: '100482',
+        name: 'Avery Brooks',
+        role: 'DepartmentManager',
+        department: 'Grocery',
+        jobFunction: 'Customer Support',
+        access_token: ACCESS_TOKEN,
+        refresh_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.cmVmcmVzaA',
+      },
+      meta: {},
+    });
+    TestBed.tick();
+
+    expect(navigate).not.toHaveBeenCalled();
+
+    httpMock.expectOne(SHIFT_URL).flush({ data: { status: 'OffShift', onDuty: false }, meta: {} });
+    TestBed.tick();
+
+    expect(navigate).toHaveBeenCalledWith('/home');
+
+    authService.logout();
+  });
+
   describe('a session ended elsewhere, through the running app\'s own wiring', () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -179,6 +217,14 @@ describe('appConfig', () => {
       });
 
       TestBed.tick();
+
+      // The running app reads the shift at sign-in (LET-141), and since
+      // LET-142 the watcher that reacts to it is live from bootstrap.
+      httpMock
+        .expectOne(SHIFT_URL)
+        .flush({ data: { status: 'OnShift', onDuty: true }, meta: {} });
+      TestBed.tick();
+
       expect(navigate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(SESSION_REFRESH_INTERVAL_MS);

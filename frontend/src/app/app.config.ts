@@ -11,6 +11,7 @@ import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
 import { SessionTeardownService } from './core/auth/session-teardown.service';
+import { OffDutyRedirectService } from './core/navigation/off-duty-redirect.service';
 import { ScheduleService } from './core/schedule/schedule.service';
 import { ShiftService } from './core/shift/shift.service';
 import {
@@ -32,11 +33,13 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([bearerTokenInterceptor])),
-    // Eager on purpose: `SessionTeardownService` is a watcher, and nothing in
-    // the app injects it. A session ends on a background timer with nobody on
-    // the call stack, so the thing that reacts has to already exist by then.
+    // Eager on purpose: `SessionTeardownService` and `OffDutyRedirectService`
+    // are watchers, and nothing in the app injects them. A session ends on a
+    // background timer, and a shift status arrives after sign-in, with nobody
+    // on the call stack, so the thing that reacts has to already exist by then.
     provideEnvironmentInitializer(() => {
       inject(SessionTeardownService);
+      inject(OffDutyRedirectService);
     }),
     {
       // `useExisting`, not `useClass`: AuthService is `providedIn: 'root'`, and
