@@ -1,18 +1,39 @@
-import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
+import { computed, provideZonelessChangeDetection, signal, Type } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   ActivatedRouteSnapshot,
+  ActivationEnd,
+  NavigationEnd,
   provideRouter,
   Router,
   RouterStateSnapshot,
   UrlTree,
 } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { Observable, throwError } from 'rxjs';
 
 import { authGuard } from './auth.guard';
 import { IAuthService } from './auth.service';
+import { routes } from '../../app.routes';
+import { HomeComponent } from '../../features/home/home';
+import { MyScheduleComponent } from '../../features/my-schedule/my-schedule';
+import { SaleBuilderComponent } from '../../features/sale-builder/sale-builder.component';
+import { MockBuyerService } from '../../mocks/mock-buyer.service';
+import { MockProductService } from '../../mocks/mock-product.service';
+import { MockSalesService } from '../../mocks/mock-sales.service';
+import { AppShellComponent } from '../layout/app-shell/app-shell';
 import { Employee, EmployeeRole } from '../models/auth/employee.model';
-import { AUTH_SERVICE } from '../tokens';
+import { ShiftStatus } from '../models/shift/shift-status.model';
+import { StubScheduleService } from '../schedule/testing/stub-schedule.service';
+import { StubShiftService } from '../shift/testing/stub-shift.service';
+import {
+  AUTH_SERVICE,
+  BUYER_SERVICE,
+  PRODUCT_SERVICE,
+  SALES_SERVICE,
+  SCHEDULE_SERVICE,
+  SHIFT_SERVICE,
+} from '../tokens';
 
 /**
  * The same reasoning as `app-shell.spec.ts`: `MockAuthService` resolves one
@@ -43,10 +64,49 @@ class StubAuthService implements IAuthService {
   }
 }
 
+const ALL_ROLES: readonly EmployeeRole[] = [
+  'Associate',
+  'DepartmentManager',
+  'StoreManager',
+  'ReceivingAssociate',
+];
+
+const OFF_DUTY: readonly ShiftStatus[] = ['OffShift', 'OnBreak'];
+
+const EVERY_SHELL_ROUTE = [
+  '/sale',
+  '/products',
+  '/sales',
+  '/buyers',
+  '/payment',
+  '/home',
+  '/schedule',
+];
+
+/** A Receiving Associate's own item is only theirs with the Receiving function. */
+function jobFunctionFor(role: EmployeeRole): string {
+  return role === 'ReceivingAssociate' ? 'Receiving' : 'Sales Floor';
+}
+
+/** Every shared nav route, plus a role-specific one by its declared item. */
+const FULL_NAV_ROUTES: readonly { url: string; data: Record<string, unknown> }[] = [
+  { url: '/sale', data: {} },
+  { url: '/products', data: {} },
+  { url: '/sales', data: {} },
+  { url: '/buyers', data: {} },
+  { url: '/receiving', data: { navItem: 'Receiving' } },
+];
+
 describe('authGuard', () => {
   let authService: StubAuthService;
+  let shiftService: StubShiftService;
   let router: Router;
 
+  /**
+   * The existing role-gate specs run with no shift read yet, which the shift
+   * gate lets through (LET-142 thread, criterion 7). The shift gate's own
+   * specs below report a status.
+   */
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -56,10 +116,15 @@ describe('authGuard', () => {
           provide: AUTH_SERVICE,
           useClass: StubAuthService,
         },
+        {
+          provide: SHIFT_SERVICE,
+          useClass: StubShiftService,
+        },
       ],
     });
 
     authService = TestBed.inject(AUTH_SERVICE) as StubAuthService;
+    shiftService = TestBed.inject(SHIFT_SERVICE) as StubShiftService;
     router = TestBed.inject(Router);
   });
 
@@ -169,6 +234,107 @@ describe('authGuard', () => {
     });
   });
 
+  describe('the shift gate', () => {
+    describe.each(OFF_DUTY)('while %s', (status) => {
+      it.each(ALL_ROLES)('turns every full-nav route away to Home for a %s', (role) => {
+        authService.signIn(employee({ role, jobFunction: jobFunctionFor(role) }));
+        shiftService.report(status);
+
+        for (const { url, data } of FULL_NAV_ROUTES) {
+          if (data['navItem'] === 'Receiving' && role !== 'ReceivingAssociate') {
+            continue;
+          }
+
+          expect(redirectOf(activate(url, data))).toBe('/home');
+        }
+      });
+
+      it('turns a full-nav route away to Home whatever its query string', () => {
+        authService.signIn(employee());
+        shiftService.report(status);
+
+        expect(redirectOf(activate('/products?query=milk'))).toBe('/home');
+      });
+
+      it('turns /payment away to Home too, since no associate work is open off duty', () => {
+        authService.signIn(employee());
+        shiftService.report(status);
+
+        expect(redirectOf(activate('/payment'))).toBe('/home');
+      });
+
+      it('sends a route the role does not earn to Home, not to Sale', () => {
+        authService.signIn(employee({ role: 'Associate' }));
+        shiftService.report(status);
+
+        expect(redirectOf(activate('/employee-roster', { navItem: 'Employee roster' }))).toBe(
+          '/home',
+        );
+      });
+
+      it.each(['/home', '/schedule'])('lets %s through', (url) => {
+        authService.signIn(employee());
+        shiftService.report(status);
+
+        expect(activate(url)).toBe(true);
+      });
+    });
+
+    describe('on shift', () => {
+      it.each(ALL_ROLES)('lets a %s reach every full-nav route their role earns', (role) => {
+        authService.signIn(employee({ role, jobFunction: jobFunctionFor(role) }));
+        shiftService.report('OnShift');
+
+        for (const { url, data } of FULL_NAV_ROUTES) {
+          if (data['navItem'] === 'Receiving' && role !== 'ReceivingAssociate') {
+            continue;
+          }
+
+          expect(activate(url, data)).toBe(true);
+        }
+
+        expect(activate('/home')).toBe(true);
+        expect(activate('/schedule')).toBe(true);
+        expect(activate('/payment')).toBe(true);
+      });
+
+      it('keeps the role gate in force', () => {
+        authService.signIn(employee({ role: 'Associate' }));
+        shiftService.report('OnShift');
+
+        expect(redirectOf(activate('/employee-roster', { navItem: 'Employee roster' }))).toBe(
+          '/sale',
+        );
+      });
+    });
+
+    describe('with no shift status held', () => {
+      it('lets every route through while no shift status has been read', () => {
+        authService.signIn(employee());
+
+        for (const url of EVERY_SHELL_ROUTE) {
+          expect(activate(url)).toBe(true);
+        }
+      });
+
+      it('lets every route through after a failed read clears the held status', () => {
+        authService.signIn(employee());
+        shiftService.report('OffShift');
+        shiftService.clear();
+
+        expect(activate('/sale')).toBe(true);
+        expect(activate('/home')).toBe(true);
+        expect(activate('/schedule')).toBe(true);
+      });
+
+      it('keeps the role gate in force', () => {
+        authService.signIn(employee({ role: 'Associate' }));
+
+        expect(redirectOf(activate('/receiving', { navItem: 'Receiving' }))).toBe('/sale');
+      });
+    });
+  });
+
   describe('after signing out', () => {
     it('stops letting the route through', () => {
       authService.signIn(employee());
@@ -180,4 +346,126 @@ describe('authGuard', () => {
       expect(redirectOf(activate('/products'))).toBe('/login?returnUrl=%2Fproducts');
     });
   });
+});
+
+/**
+ * The real route table behind the real gate. This is what a saved link or the
+ * browser's back button goes through.
+ */
+describe('authGuard through the app route table', () => {
+  let authService: StubAuthService;
+  let shiftService: StubShiftService;
+  let router: Router;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter(routes),
+        { provide: AUTH_SERVICE, useClass: StubAuthService },
+        { provide: SHIFT_SERVICE, useClass: StubShiftService },
+        { provide: SCHEDULE_SERVICE, useClass: StubScheduleService },
+        { provide: PRODUCT_SERVICE, useClass: MockProductService },
+        { provide: SALES_SERVICE, useClass: MockSalesService },
+        { provide: BUYER_SERVICE, useClass: MockBuyerService },
+      ],
+    }).compileComponents();
+
+    authService = TestBed.inject(AUTH_SERVICE) as StubAuthService;
+    shiftService = TestBed.inject(SHIFT_SERVICE) as StubShiftService;
+    router = TestBed.inject(Router);
+
+    authService.signIn({
+      id: 'e-1',
+      name: 'Avery Brooks',
+      role: 'Associate',
+      department: 'Grocery',
+      jobFunction: 'Sales Floor',
+    });
+  });
+
+  /** Every component the router activated, and every URL a navigation ended on. */
+  async function visit(url: string): Promise<{ activated: Type<unknown>[]; ended: string[] }> {
+    const activated: Type<unknown>[] = [];
+    const ended: string[] = [];
+    const harness = await RouterTestingHarness.create();
+
+    const subscription = router.events.subscribe((event) => {
+      if (event instanceof ActivationEnd && event.snapshot.component) {
+        activated.push(event.snapshot.component);
+      }
+
+      if (event instanceof NavigationEnd) {
+        ended.push(event.urlAfterRedirects);
+      }
+    });
+
+    await harness.navigateByUrl(url);
+    subscription.unsubscribe();
+
+    return { activated, ended };
+  }
+
+  it.each(OFF_DUTY)(
+    'lands a direct visit to Sale on Home when %s, with no screen in between',
+    async (status) => {
+      shiftService.report(status);
+
+      const { activated, ended } = await visit('/sale');
+
+      expect(router.url).toBe('/home');
+      expect(ended).toEqual(['/home']);
+      expect(activated).toEqual([HomeComponent, AppShellComponent]);
+      expect(activated).not.toContain(SaleBuilderComponent);
+    },
+  );
+
+  it.each(OFF_DUTY)('lands the app root on Home when %s', async (status) => {
+    shiftService.report(status);
+
+    await visit('/');
+
+    expect(router.url).toBe('/home');
+  });
+
+  it('loads Sale directly on shift', async () => {
+    shiftService.report('OnShift');
+
+    const { activated } = await visit('/sale');
+
+    expect(router.url).toBe('/sale');
+    expect(activated).toContain(SaleBuilderComponent);
+  });
+
+  it('loads Sale directly while no shift status has been read', async () => {
+    const { activated } = await visit('/sale');
+
+    expect(router.url).toBe('/sale');
+    expect(activated).toContain(SaleBuilderComponent);
+  });
+
+  /** LET-144 criterion 5 rests on this. */
+  it.each<ShiftStatus>(['OnShift', 'OnBreak', 'OffShift'])(
+    'loads My schedule directly when %s',
+    async (status) => {
+      shiftService.report(status);
+
+      const { activated } = await visit('/schedule');
+
+      expect(router.url).toBe('/schedule');
+      expect(activated).toContain(MyScheduleComponent);
+    },
+  );
+
+  it.each<ShiftStatus>(['OnShift', 'OnBreak', 'OffShift'])(
+    'loads Home directly when %s',
+    async (status) => {
+      shiftService.report(status);
+
+      const { activated } = await visit('/home');
+
+      expect(router.url).toBe('/home');
+      expect(activated).toContain(HomeComponent);
+    },
+  );
 });

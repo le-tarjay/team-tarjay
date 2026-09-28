@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 import { appConfig } from './app.config';
 import { AuthService, SESSION_REFRESH_INTERVAL_MS } from './core/auth/auth.service';
 import { AUTHORIZATION_HEADER } from './core/auth/bearer-token.interceptor';
-import { LOGIN_ROUTE } from './core/navigation/route-access';
+import { HOME_ROUTE, LOGIN_ROUTE } from './core/navigation/route-access';
 import { SaleService } from './core/sale/sale.service';
 import { ScheduleService } from './core/schedule/schedule.service';
 import { ShiftService } from './core/shift/shift.service';
@@ -15,6 +15,8 @@ import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from './core/tokens';
 import { MockAuthService } from './mocks/mock-auth.service';
 
 const SIGN_IN_URL = '/v1/employees/sign-in';
+
+const SHIFT_URL = '/v1/employees/me/shift';
 
 /** The default `SESSION_REFRESH_CONFIG` resolves to this. */
 const TOKEN_ENDPOINT = 'http://localhost:8080/realms/team-targe/protocol/openid-connect/token';
@@ -131,6 +133,47 @@ describe('appConfig', () => {
   });
 
   /**
+   * `OffDutyRedirectService` is a watcher nothing injects, like
+   * `SessionTeardownService` below. Its own spec proves what it does; this
+   * proves the running app brings it to life.
+   */
+  it('moves an employee to Home when the running app reads them as off shift', async () => {
+    const authService = TestBed.inject(AuthService);
+    const httpMock = TestBed.inject(HttpTestingController);
+    const router = TestBed.inject(Router);
+
+    authService.login({ employeeId: '100482', pin: '8321' }).subscribe();
+    httpMock.expectOne(SIGN_IN_URL).flush({
+      data: {
+        employeeId: '100482',
+        name: 'Avery Brooks',
+        role: 'DepartmentManager',
+        department: 'Grocery',
+        jobFunction: 'Customer Support',
+        access_token: ACCESS_TOKEN,
+        refresh_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.cmVmcmVzaA',
+      },
+      meta: {},
+    });
+    TestBed.tick();
+
+    await router.navigateByUrl('/sale');
+
+    expect(router.url).toBe('/sale');
+
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+
+    httpMock
+      .expectOne(SHIFT_URL)
+      .flush({ data: { status: 'OffShift', onDuty: false }, meta: {} });
+    TestBed.tick();
+
+    expect(navigate).toHaveBeenCalledWith(HOME_ROUTE);
+
+    httpMock.verify();
+  });
+
+  /**
    * `SessionTeardownService` is a watcher nothing injects, so its own spec has
    * to instantiate it by hand. That proves what it does and not that the
    * running app ever brings it to life — which is the failure mode worth a test
@@ -179,6 +222,15 @@ describe('appConfig', () => {
       });
 
       TestBed.tick();
+
+      // The running app reads the shift at every sign-in (LET-141), and since
+      // LET-142 it creates `ShiftService` at bootstrap through
+      // `OffDutyRedirectService`. On shift, nothing moves the employee.
+      httpMock
+        .expectOne(SHIFT_URL)
+        .flush({ data: { status: 'OnShift', onDuty: true }, meta: {} });
+      TestBed.tick();
+
       expect(navigate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(SESSION_REFRESH_INTERVAL_MS);
