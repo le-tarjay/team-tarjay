@@ -58,6 +58,16 @@
 
       @if (isAccountMenuOpen()) {
         <div class="dropdown-menu dropdown-menu-end show">
+          @if (showsMyScheduleInAccountMenu()) {
+            <a
+              class="dropdown-item"
+              [routerLink]="myScheduleItem.route"
+              (click)="closeAccountMenu()"
+            >
+              {{ myScheduleItem.label }}
+            </a>
+          }
+
           @for (item of accountMenuItems(); track item.label) {
             <button
               type="button"
@@ -68,7 +78,7 @@
             </button>
           }
 
-          @if (accountMenuItems().length > 0) {
+          @if (showsMyScheduleInAccountMenu() || accountMenuItems().length > 0) {
             <hr class="dropdown-divider" />
           }
 

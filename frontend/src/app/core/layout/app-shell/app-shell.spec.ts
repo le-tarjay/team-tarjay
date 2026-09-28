@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, UrlTree } from '@angular/router';
 import { Observable, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
@@ -436,6 +436,114 @@ describe('AppShellComponent', () => {
       reportShift('OnShift');
 
       expect(shiftIndicator()?.nextElementSibling?.contains(accountToggle())).toBe(true);
+    });
+  });
+
+  /**
+   * On shift, My Schedule is in the account menu beside the shift actions; off
+   * shift or on break it is a nav item (API map, design rows D8 and D9).
+   */
+  describe('My schedule entry point', () => {
+    function reportShift(status: ShiftStatus): void {
+      shiftService.report(status);
+      fixture.detectChanges();
+    }
+
+    function myScheduleNavLink(): HTMLAnchorElement | undefined {
+      return navItemElements().find((item) => item.textContent?.trim() === 'My schedule') as
+        | HTMLAnchorElement
+        | undefined;
+    }
+
+    function myScheduleMenuLink(): HTMLAnchorElement | undefined {
+      return accountMenuItems().find((item) => item.textContent?.trim() === 'My schedule') as
+        | HTMLAnchorElement
+        | undefined;
+    }
+
+    it('is in the account menu, and not the nav, when on shift', () => {
+      signIn();
+      reportShift('OnShift');
+      openAccountMenu();
+
+      const link = myScheduleMenuLink();
+
+      expect(link?.tagName).toBe('A');
+      expect(link?.getAttribute('href')).toBe('/schedule');
+      expect(myScheduleNavLink()).toBeUndefined();
+    });
+
+    it('sits ahead of Logout in the account menu', () => {
+      signIn({ role: 'StoreManager' });
+      reportShift('OnShift');
+      openAccountMenu();
+
+      expect(accountMenuLabels()).toEqual([
+        'My schedule',
+        'Employee roster',
+        'Register status',
+        'Logout',
+      ]);
+    });
+
+    it.each<ShiftStatus>(['OffShift', 'OnBreak'])(
+      'is a nav item, and not in the account menu, when %s',
+      (status) => {
+        signIn();
+        reportShift(status);
+        openAccountMenu();
+
+        const link = myScheduleNavLink();
+
+        expect(link?.tagName).toBe('A');
+        expect(link?.getAttribute('href')).toBe('/schedule');
+        expect(navLabels().at(-1)).toBe('My schedule');
+        expect(myScheduleMenuLink()).toBeUndefined();
+      },
+    );
+
+    it('moves between the nav and the account menu as the shift changes', () => {
+      signIn();
+      reportShift('OffShift');
+
+      expect(myScheduleNavLink()).toBeDefined();
+
+      reportShift('OnShift');
+      openAccountMenu();
+
+      expect(myScheduleNavLink()).toBeUndefined();
+      expect(myScheduleMenuLink()).toBeDefined();
+
+      reportShift('OnBreak');
+
+      expect(myScheduleNavLink()).toBeDefined();
+      expect(myScheduleMenuLink()).toBeUndefined();
+    });
+
+    it('is offered in neither place before the first shift-status read lands', () => {
+      signIn();
+      openAccountMenu();
+
+      expect(myScheduleNavLink()).toBeUndefined();
+      expect(myScheduleMenuLink()).toBeUndefined();
+      expect(accountMenuLabels()).toEqual(['Logout']);
+    });
+
+    it('opens My Schedule and closes the account menu when chosen', () => {
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+
+      signIn();
+      reportShift('OnShift');
+      openAccountMenu();
+
+      myScheduleMenuLink()?.click();
+      fixture.detectChanges();
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(router.serializeUrl(navigate.mock.calls[0]?.[0] as UrlTree)).toBe('/schedule');
+      expect(accountToggle().getAttribute('aria-expanded')).toBe('false');
+      expect(accountMenuLabels()).toEqual([]);
     });
   });
 

@@ -22,15 +22,3 @@ export function upcomingShifts(
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
     .slice(0, count);
 }
-
-/**
- * The terminal's own calendar date, as ISO `yyyy-MM-dd`. Local, not UTC: the
- * schedule is the store's local calendar, and the terminal sits in the store.
- */
-export function localIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}

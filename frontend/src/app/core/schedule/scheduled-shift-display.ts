@@ -11,10 +11,17 @@ export function shiftTimeRange(shift: WorkedShift): string {
 }
 
 export function shiftHours(shift: WorkedShift): string {
-  const minutes = minutesOfDay(shift.end) - minutesOfDay(shift.start);
-  const hours = Math.round((minutes / 60) * 100) / 100;
+  return hoursLabel(shiftHourCount(shift));
+}
 
-  return `${hours}h`;
+/** A shift's length in hours, as a number a week's total can be summed from. */
+export function shiftHourCount(shift: WorkedShift): number {
+  return (minutesOfDay(shift.end) - minutesOfDay(shift.start)) / 60;
+}
+
+/** "8h", "8.5h", "40h". Rounded to two places so 20 minutes reads "0.33h". */
+export function hoursLabel(hours: number): string {
+  return `${Math.round(hours * 100) / 100}h`;
 }
 
 /** 24-hour `HH:mm` to 12-hour "h:mm AM". */

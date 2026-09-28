@@ -6,10 +6,11 @@ import { Observable } from 'rxjs';
 import { ScheduledShift, WorkedShift } from '../../core/models/schedule/scheduled-shift.model';
 import { ShiftState, ShiftStatus } from '../../core/models/shift/shift-status.model';
 import { DEFAULT_SIGNED_IN_ROUTE, MY_SCHEDULE_ROUTE } from '../../core/navigation/route-access';
+import { localIsoDate } from '../../core/schedule/calendar-week';
 import { shiftHours, shiftTimeRange } from '../../core/schedule/scheduled-shift-display';
 import { shiftStatusLabel } from '../../core/shift/shift-status-label';
 import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from '../../core/tokens';
-import { localIsoDate, upcomingShifts } from './upcoming-shifts';
+import { upcomingShifts } from './upcoming-shifts';
 
 /** The two states Home speaks to. On shift, the employee belongs at work. */
 type OffDutyStatus = Extract<ShiftStatus, 'OffShift' | 'OnBreak'>;
