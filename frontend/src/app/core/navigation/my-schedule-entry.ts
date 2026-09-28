@@ -7,6 +7,13 @@ import { MY_SCHEDULE_ROUTE } from './route-access';
  * when some item in that list governs it and the employee's identity does not
  * earn that item. My Schedule is open to every signed-in employee in every
  * shift state, so no item governs its route.
+ *
+ * Contract for LET-142 (nav suspension while on shift): the shift-state gate it
+ * adds must leave `MY_SCHEDULE_ROUTE` reachable in every shift state. That
+ * means not adding this item to `ALL_NAV_ITEMS`, or to any list that gate
+ * governs by. LET-144 criterion 5 (on break, going straight to My Schedule
+ * loads the page) depends on it, and the specs in this PR cannot hold it
+ * because that gate does not exist yet.
  */
 export const MY_SCHEDULE_NAV_ITEM: NavItem & { readonly route: string } = {
   label: 'My schedule',
