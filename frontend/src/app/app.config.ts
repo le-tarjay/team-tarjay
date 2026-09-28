@@ -11,6 +11,7 @@ import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
 import { SessionTeardownService } from './core/auth/session-teardown.service';
+import { ScheduleService } from './core/schedule/schedule.service';
 import { ShiftService } from './core/shift/shift.service';
 import {
   AUTH_SERVICE,
@@ -18,6 +19,7 @@ import {
   PAYMENT_SERVICE,
   PRODUCT_SERVICE,
   SALES_SERVICE,
+  SCHEDULE_SERVICE,
   SHIFT_SERVICE,
 } from './core/tokens';
 import { MockBuyerService } from './mocks/mock-buyer.service';
@@ -66,6 +68,12 @@ export const appConfig: ApplicationConfig = {
       // second, divergent copy of it.
       provide: SHIFT_SERVICE,
       useExisting: ShiftService,
+    },
+    {
+      // Real from the start, like SHIFT_SERVICE: the shifts endpoint existed
+      // before this service did.
+      provide: SCHEDULE_SERVICE,
+      useExisting: ScheduleService,
     },
   ],
 };

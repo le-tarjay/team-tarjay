@@ -9,8 +9,9 @@ import { AuthService, SESSION_REFRESH_INTERVAL_MS } from './core/auth/auth.servi
 import { AUTHORIZATION_HEADER } from './core/auth/bearer-token.interceptor';
 import { LOGIN_ROUTE } from './core/navigation/route-access';
 import { SaleService } from './core/sale/sale.service';
+import { ScheduleService } from './core/schedule/schedule.service';
 import { ShiftService } from './core/shift/shift.service';
-import { AUTH_SERVICE, SHIFT_SERVICE } from './core/tokens';
+import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from './core/tokens';
 import { MockAuthService } from './mocks/mock-auth.service';
 
 const SIGN_IN_URL = '/v1/employees/sign-in';
@@ -49,6 +50,10 @@ describe('appConfig', () => {
    */
   it('resolves SHIFT_SERVICE to the same instance as the root ShiftService', () => {
     expect(TestBed.inject(SHIFT_SERVICE)).toBe(TestBed.inject(ShiftService));
+  });
+
+  it('resolves SCHEDULE_SERVICE to the real ScheduleService', () => {
+    expect(TestBed.inject(SCHEDULE_SERVICE)).toBe(TestBed.inject(ScheduleService));
   });
 
   /**
