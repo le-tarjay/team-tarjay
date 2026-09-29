@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideRouter, Router, UrlTree } from '@angular/router';
 import { Observable, throwError } from 'rxjs';
-import { vi } from 'vitest';
+import { MockInstance, vi } from 'vitest';
 
 import { AppShellComponent } from './app-shell';
 import { IAuthService } from '../../auth/auth.service';
@@ -479,6 +479,8 @@ describe('AppShellComponent', () => {
       openAccountMenu();
 
       expect(accountMenuLabels()).toEqual([
+        'Start break',
+        'Clock out',
         'My schedule',
         'Employee roster',
         'Register status',
@@ -544,6 +546,124 @@ describe('AppShellComponent', () => {
       expect(router.serializeUrl(navigate.mock.calls[0]?.[0] as UrlTree)).toBe('/schedule');
       expect(accountToggle().getAttribute('aria-expanded')).toBe('false');
       expect(accountMenuLabels()).toEqual([]);
+    });
+  });
+
+  /**
+   * Which shift actions the account menu offers in each state (API map, design
+   * rows D2, D3 and D4). What choosing one does is covered against the real
+   * `ShiftService` below.
+   */
+  describe('shift actions in the account menu', () => {
+    const SHIFT_ACTION_LABELS = ['Clock in', 'Start break', 'End break', 'Clock out'];
+
+    function reportShift(status: ShiftStatus): void {
+      shiftService.report(status);
+      fixture.detectChanges();
+    }
+
+    function shiftActionItems(): HTMLButtonElement[] {
+      return accountMenuItems().filter((item) =>
+        SHIFT_ACTION_LABELS.includes(item.textContent?.trim() ?? ''),
+      );
+    }
+
+    function shiftActionLabels(): string[] {
+      return shiftActionItems().map((item) => item.textContent?.trim() ?? '');
+    }
+
+    it('shows exactly "Clock in" when off shift', () => {
+      signIn();
+      reportShift('OffShift');
+      openAccountMenu();
+
+      expect(shiftActionLabels()).toEqual(['Clock in']);
+    });
+
+    it('shows exactly "Start break" and "Clock out" when on shift', () => {
+      signIn();
+      reportShift('OnShift');
+      openAccountMenu();
+
+      expect(shiftActionLabels()).toEqual(['Start break', 'Clock out']);
+    });
+
+    it('shows exactly "End break" and "Clock out" when on break, with End break primary', () => {
+      signIn();
+      reportShift('OnBreak');
+      openAccountMenu();
+
+      const [endBreak, clockOut] = shiftActionItems();
+
+      expect(shiftActionLabels()).toEqual(['End break', 'Clock out']);
+      expect(endBreak?.classList).toContain('shift-action-primary');
+      expect(clockOut?.classList).not.toContain('shift-action-primary');
+    });
+
+    it('marks "Clock in" as the primary action off shift', () => {
+      signIn();
+      reportShift('OffShift');
+      openAccountMenu();
+
+      expect(shiftActionItems()[0]?.classList).toContain('shift-action-primary');
+    });
+
+    it('marks neither on-shift action as primary', () => {
+      signIn();
+      reportShift('OnShift');
+      openAccountMenu();
+
+      expect(
+        shiftActionItems().some((item) => item.classList.contains('shift-action-primary')),
+      ).toBe(false);
+    });
+
+    it('offers no shift action before the first shift-status read lands', () => {
+      signIn();
+      openAccountMenu();
+
+      expect(shiftActionLabels()).toEqual([]);
+    });
+
+    it('sits at the top of the menu, ahead of every existing entry', () => {
+      signIn({ role: 'StoreManager' });
+      reportShift('OnBreak');
+      openAccountMenu();
+
+      expect(accountMenuLabels()).toEqual([
+        'End break',
+        'Clock out',
+        'Employee roster',
+        'Register status',
+        'Logout',
+      ]);
+    });
+
+    it('follows the held status as it changes', () => {
+      signIn();
+      reportShift('OffShift');
+      openAccountMenu();
+
+      expect(shiftActionLabels()).toEqual(['Clock in']);
+
+      reportShift('OnShift');
+
+      expect(shiftActionLabels()).toEqual(['Start break', 'Clock out']);
+
+      reportShift('OnBreak');
+
+      expect(shiftActionLabels()).toEqual(['End break', 'Clock out']);
+    });
+
+    it('renders every shift action as a real, enabled button carrying its label', () => {
+      signIn();
+      reportShift('OnBreak');
+      openAccountMenu();
+
+      for (const item of shiftActionItems()) {
+        expect(item.tagName).toBe('BUTTON');
+        expect(item.disabled).toBe(false);
+      }
     });
   });
 
@@ -689,5 +809,167 @@ describe('AppShellComponent shift indicator, fed by the real ShiftService', () =
     fixture.detectChanges();
 
     expect(shiftIndicatorText()).toBe('On the clock');
+  });
+
+  /**
+   * Choosing a shift action from the account menu: the endpoint it calls, where
+   * it lands, and that everything on screen comes from the server's answer.
+   */
+  describe('choosing a shift action', () => {
+    let navigate: MockInstance<Router['navigateByUrl']>;
+
+    beforeEach(() => {
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    });
+
+    function signInAs(status: ShiftStatus): void {
+      signIn();
+      httpMock
+        .expectOne(SHIFT_URL)
+        .flush({ data: { status, onDuty: status === 'OnShift' }, meta: {} });
+      fixture.detectChanges();
+    }
+
+    function openAccountMenu(): void {
+      (fixture.nativeElement.querySelector('.dropdown-toggle') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    function menuItem(label: string): HTMLButtonElement | undefined {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('.dropdown-item') as NodeListOf<HTMLButtonElement>,
+      ).find((item) => item.textContent?.trim() === label);
+    }
+
+    function menuLabels(): string[] {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('.dropdown-item') as NodeListOf<HTMLElement>,
+      ).map((item) => item.textContent?.trim() ?? '');
+    }
+
+    function choose(label: string): void {
+      openAccountMenu();
+      menuItem(label)?.click();
+      fixture.detectChanges();
+    }
+
+    function respond(url: string, status: ShiftStatus): void {
+      httpMock
+        .expectOne({ method: 'POST', url })
+        .flush({ data: { status, onDuty: status === 'OnShift' }, meta: {} });
+      fixture.detectChanges();
+    }
+
+    function isMenuOpen(): boolean {
+      return (
+        (fixture.nativeElement.querySelector('.dropdown-toggle') as HTMLButtonElement).getAttribute(
+          'aria-expanded',
+        ) === 'true'
+      );
+    }
+
+    function identityText(): string {
+      return (
+        (
+          fixture.nativeElement.querySelector('.navbar-text') as HTMLElement | null
+        )?.textContent?.trim() ?? ''
+      );
+    }
+
+    it('"Clock in" calls the clock-in endpoint and lands on the on-shift default screen', () => {
+      signInAs('OffShift');
+      choose('Clock in');
+      respond('/v1/employees/me/clock-in', 'OnShift');
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/sale');
+      expect(shiftIndicatorText()).toBe('On the clock');
+      expect(isMenuOpen()).toBe(false);
+    });
+
+    it('"End break" calls the end-break endpoint and lands on the default screen, never Home', () => {
+      signInAs('OnBreak');
+      choose('End break');
+      respond('/v1/employees/me/end-break', 'OnShift');
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/sale');
+      expect(navigate).not.toHaveBeenCalledWith('/home');
+      expect(shiftIndicatorText()).toBe('On the clock');
+    });
+
+    it('"Clock out" calls the clock-out endpoint and stays on Home, still signed in', () => {
+      signInAs('OnShift');
+      choose('Clock out');
+      respond('/v1/employees/me/clock-out', 'OffShift');
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/home');
+      expect(navigate).not.toHaveBeenCalledWith('/login');
+      expect(identityText()).toBe('Avery Brooks · Grocery · Associate');
+      expect(shiftIndicatorText()).toBe('Not on the clock');
+    });
+
+    it('"Clock out" from on break calls the clock-out endpoint', () => {
+      signInAs('OnBreak');
+      choose('Clock out');
+      respond('/v1/employees/me/clock-out', 'OffShift');
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/home');
+      expect(shiftIndicatorText()).toBe('Not on the clock');
+    });
+
+    it('"Start break" calls the start-break endpoint and lands on Home', () => {
+      signInAs('OnShift');
+      choose('Start break');
+      respond('/v1/employees/me/start-break', 'OnBreak');
+
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/home');
+      expect(shiftIndicatorText()).toBe('On break');
+    });
+
+    it('changes nothing on screen until the server answers, then shows what it answered', () => {
+      signInAs('OnShift');
+      choose('Start break');
+
+      expect(shiftIndicatorText()).toBe('On the clock');
+      expect(menuLabels().slice(0, 2)).toEqual(['Start break', 'Clock out']);
+      expect(navigate).not.toHaveBeenCalled();
+
+      respond('/v1/employees/me/start-break', 'OnBreak');
+      openAccountMenu();
+
+      expect(shiftIndicatorText()).toBe('On break');
+      expect(menuLabels().slice(0, 2)).toEqual(['End break', 'Clock out']);
+    });
+
+    it('shows the status the server returned, not the one the action implies', () => {
+      signInAs('OffShift');
+      choose('Clock in');
+      respond('/v1/employees/me/clock-in', 'OnBreak');
+
+      expect(shiftIndicatorText()).toBe('On break');
+    });
+
+    it('disables the shift actions while a transition is in flight', () => {
+      signInAs('OnShift');
+      choose('Clock out');
+
+      expect(menuItem('Start break')?.disabled).toBe(true);
+      expect(menuItem('Clock out')?.disabled).toBe(true);
+
+      respond('/v1/employees/me/clock-out', 'OffShift');
+    });
+
+    it('on failure, leaves the status as it was, stays put, and offers the action again', () => {
+      signInAs('OnShift');
+      choose('Clock out');
+      httpMock
+        .expectOne({ method: 'POST', url: '/v1/employees/me/clock-out' })
+        .flush(null, { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+
+      expect(shiftIndicatorText()).toBe('On the clock');
+      expect(navigate).not.toHaveBeenCalled();
+      expect(isMenuOpen()).toBe(true);
+      expect(menuItem('Clock out')?.disabled).toBe(false);
+    });
   });
 });

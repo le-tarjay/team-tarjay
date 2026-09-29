@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Observable } from 'rxjs';
 
 import { employeeRoleLabel } from '../../navigation/employee-role-label';
 import { MY_SCHEDULE_NAV_ITEM, myScheduleEntryPoint } from '../../navigation/my-schedule-entry';
@@ -10,7 +11,8 @@ import {
   SHARED_NAV_ITEMS,
 } from '../../navigation/role-navigation';
 import { LOGIN_ROUTE } from '../../navigation/route-access';
-import { ShiftStatus } from '../../models/shift/shift-status.model';
+import { ShiftState, ShiftStatus } from '../../models/shift/shift-status.model';
+import { ShiftAction, shiftActionsFor } from '../../shift/shift-actions';
 import { shiftStatusLabel } from '../../shift/shift-status-label';
 import { AUTH_SERVICE, SHIFT_SERVICE } from '../../tokens';
 
@@ -99,6 +101,18 @@ export class AppShellComponent {
     return this.myScheduleEntry() === 'nav' ? [...items, MY_SCHEDULE_NAV_ITEM] : items;
   });
 
+  /**
+   * Clock in, Start break, End break and Clock out, as the server's last
+   * reported status allows. They change only when that status does: a choice
+   * made here never moves the menu on by itself.
+   */
+  protected readonly shiftActions = computed(() =>
+    shiftActionsFor(this.shiftService.currentShift()?.status ?? null),
+  );
+
+  /** True while a shift transition is in flight, so a second one can't race it. */
+  protected readonly isShiftActionPending = signal(false);
+
   protected readonly accountMenuItems = computed<readonly NavItem[]>(() => {
     const employee = this.currentEmployee();
 
@@ -140,10 +154,56 @@ export class AppShellComponent {
     this.isAccountMenuOpen.set(false);
   }
 
+  /**
+   * The service takes the new status from the server's response before `next`
+   * runs, so the header, the menu and the route gate already agree with the
+   * server by the time the navigation lands.
+   */
+  protected takeShiftAction(action: ShiftAction): void {
+    this.isShiftActionPending.set(true);
+
+    this.transitionFor(action).subscribe({
+      next: () => {
+        this.isShiftActionPending.set(false);
+        this.isAccountMenuOpen.set(false);
+        this.router.navigateByUrl(action.landsOn);
+      },
+      error: (error: unknown) => {
+        this.isShiftActionPending.set(false);
+        this.shiftActionFailed(action, error);
+      },
+    });
+  }
+
   protected logout(): void {
     this.isAccountMenuOpen.set(false);
     this.authService.logout();
     this.router.navigateByUrl(LOGIN_ROUTE);
+  }
+
+  private transitionFor(action: ShiftAction): Observable<ShiftState> {
+    switch (action.kind) {
+      case 'clockIn':
+        return this.shiftService.clockIn();
+      case 'startBreak':
+        return this.shiftService.startBreak();
+      case 'endBreak':
+        return this.shiftService.endBreak();
+      case 'clockOut':
+        return this.shiftService.clockOut();
+    }
+  }
+
+  /**
+   * Extension point for LET-146, which owns what a failed shift action says
+   * and the resync behind it: a rejected transition (409) shows its message
+   * and calls `refresh()`; an unreachable backend shows a try-again message
+   * and leaves the held status alone. Until then the menu stays open and the
+   * action is offered again, with the status unchanged because the service
+   * never set one optimistically.
+   */
+  private shiftActionFailed(_action: ShiftAction, _error: unknown): void {
+    // Intentionally empty until LET-146.
   }
 
   /**
