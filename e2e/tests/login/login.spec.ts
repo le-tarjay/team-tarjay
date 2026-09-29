@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 
+import { resetToOffShift, SHIFT_LABELS, shiftIndicator, SIGNED_IN_URL } from '../../fixtures/auth';
 import { ASSOCIATE, INVALID_PIN } from '../../fixtures/credentials';
 
 /**
@@ -13,16 +14,21 @@ import { ASSOCIATE, INVALID_PIN } from '../../fixtures/credentials';
  */
 test.describe('login', () => {
   test(
-    'valid credentials sign the employee in and land on the sale screen',
+    'valid credentials sign an off-shift employee in and land on Home',
     { tag: '@smoke' },
-    async ({ page }) => {
+    async ({ page, browser }) => {
+      // Attendance outlives a sign-in, so an earlier spec may have left this
+      // employee on the clock. Start from the seeded state: off shift.
+      await resetToOffShift(browser, ASSOCIATE);
+
       await page.goto('/login');
 
       await page.getByLabel('Employee ID').fill(ASSOCIATE.employeeId);
       await page.getByLabel('PIN').fill(ASSOCIATE.pin);
       await page.getByRole('button', { name: 'Sign in' }).click();
 
-      await expect(page).toHaveURL(/\/sale$/);
+      await expect(shiftIndicator(page)).toHaveText(SHIFT_LABELS.OffShift);
+      await expect(page).toHaveURL(SIGNED_IN_URL);
     },
   );
 

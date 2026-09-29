@@ -4,13 +4,9 @@ import { Observable } from 'rxjs';
 
 import { employeeRoleLabel } from '../../navigation/employee-role-label';
 import { MY_SCHEDULE_NAV_ITEM, myScheduleEntryPoint } from '../../navigation/my-schedule-entry';
-import {
-  adminNavItems,
-  NavItem,
-  roleSpecificNavItem,
-  SHARED_NAV_ITEMS,
-} from '../../navigation/role-navigation';
+import { adminNavItems, NavItem, SHARED_NAV_ITEMS } from '../../navigation/role-navigation';
 import { LOGIN_ROUTE } from '../../navigation/route-access';
+import { mainNavItemsFor } from '../../navigation/shift-navigation';
 import { ShiftState, ShiftStatus } from '../../models/shift/shift-status.model';
 import { shiftActionFailure } from '../../shift/shift-action-messages';
 import { ShiftAction, shiftActionsFor } from '../../shift/shift-actions';
@@ -85,10 +81,10 @@ export class AppShellComponent {
   );
 
   /**
-   * The shared items always, then exactly one role-specific item appended.
-   * Signing out drops the tail and leaves the shared head untouched, which is
-   * the same nav the shell showed before anyone signed in. Off shift or on
-   * break, My Schedule follows the role-specific item.
+   * On shift, the shared items then exactly one role-specific item. Off shift
+   * or on break, only Home and My schedule. Nothing until the server has
+   * reported a shift. Signing out leaves the shared head, which is the same nav
+   * the shell showed before anyone signed in.
    */
   protected readonly navItems = computed<readonly NavItem[]>(() => {
     const employee = this.currentEmployee();
@@ -97,9 +93,7 @@ export class AppShellComponent {
       return SHARED_NAV_ITEMS;
     }
 
-    const items = [...SHARED_NAV_ITEMS, roleSpecificNavItem(employee)];
-
-    return this.myScheduleEntry() === 'nav' ? [...items, MY_SCHEDULE_NAV_ITEM] : items;
+    return mainNavItemsFor(employee, this.shiftService.currentShift());
   });
 
   /**
