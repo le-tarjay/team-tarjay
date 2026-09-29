@@ -12,6 +12,7 @@ import {
 } from '../../navigation/role-navigation';
 import { LOGIN_ROUTE } from '../../navigation/route-access';
 import { ShiftState, ShiftStatus } from '../../models/shift/shift-status.model';
+import { shiftActionFailure } from '../../shift/shift-action-messages';
 import { ShiftAction, shiftActionsFor } from '../../shift/shift-actions';
 import { shiftStatusLabel } from '../../shift/shift-status-label';
 import { AUTH_SERVICE, SHIFT_SERVICE } from '../../tokens';
@@ -113,6 +114,13 @@ export class AppShellComponent {
   /** True while a shift transition is in flight, so a second one can't race it. */
   protected readonly isShiftActionPending = signal(false);
 
+  /**
+   * What the last failed shift action said, shown at the top of the account
+   * menu. Empty once the menu closes or another action is tried, so it only
+   * ever describes the attempt the employee just made.
+   */
+  protected readonly shiftActionError = signal('');
+
   protected readonly accountMenuItems = computed<readonly NavItem[]>(() => {
     const employee = this.currentEmployee();
 
@@ -136,7 +144,7 @@ export class AppShellComponent {
   constructor() {
     effect(() => {
       if (this.authService.sessionEnded()) {
-        this.isAccountMenuOpen.set(false);
+        this.closeAccountMenu();
       }
     });
   }
@@ -147,10 +155,12 @@ export class AppShellComponent {
    * makes the menu re-render anyway.
    */
   protected toggleAccountMenu(): void {
+    this.shiftActionError.set('');
     this.isAccountMenuOpen.update((isOpen) => !isOpen);
   }
 
   protected closeAccountMenu(): void {
+    this.shiftActionError.set('');
     this.isAccountMenuOpen.set(false);
   }
 
@@ -161,11 +171,12 @@ export class AppShellComponent {
    */
   protected takeShiftAction(action: ShiftAction): void {
     this.isShiftActionPending.set(true);
+    this.shiftActionError.set('');
 
     this.transitionFor(action).subscribe({
       next: () => {
         this.isShiftActionPending.set(false);
-        this.isAccountMenuOpen.set(false);
+        this.closeAccountMenu();
         this.router.navigateByUrl(action.landsOn);
       },
       error: (error: unknown) => {
@@ -176,7 +187,7 @@ export class AppShellComponent {
   }
 
   protected logout(): void {
-    this.isAccountMenuOpen.set(false);
+    this.closeAccountMenu();
     this.authService.logout();
     this.router.navigateByUrl(LOGIN_ROUTE);
   }
@@ -195,15 +206,18 @@ export class AppShellComponent {
   }
 
   /**
-   * Extension point for LET-146, which owns what a failed shift action says
-   * and the resync behind it: a rejected transition (409) shows its message
-   * and calls `refresh()`; an unreachable backend shows a try-again message
-   * and leaves the held status alone. Until then the menu stays open and the
-   * action is offered again, with the status unchanged because the service
-   * never set one optimistically.
+   * The menu stays open with the message at its top. On a rejected transition
+   * the re-read replaces the actions under it with the ones the server's
+   * actual status allows; on an unreachable backend they stay as they were.
    */
-  private shiftActionFailed(_action: ShiftAction, _error: unknown): void {
-    // Intentionally empty until LET-146.
+  private shiftActionFailed(action: ShiftAction, error: unknown): void {
+    const failure = shiftActionFailure(action.kind, error);
+
+    this.shiftActionError.set(failure.message);
+
+    if (failure.resync) {
+      this.shiftService.refresh();
+    }
   }
 
   /**

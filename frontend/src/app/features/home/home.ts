@@ -8,6 +8,8 @@ import { ShiftState, ShiftStatus } from '../../core/models/shift/shift-status.mo
 import { DEFAULT_SIGNED_IN_ROUTE, MY_SCHEDULE_ROUTE } from '../../core/navigation/route-access';
 import { localIsoDate } from '../../core/schedule/calendar-week';
 import { shiftHours, shiftTimeRange } from '../../core/schedule/scheduled-shift-display';
+import { shiftActionFailure } from '../../core/shift/shift-action-messages';
+import { ShiftActionKind } from '../../core/shift/shift-actions';
 import { shiftStatusLabel } from '../../core/shift/shift-status-label';
 import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from '../../core/tokens';
 import { upcomingShifts } from './upcoming-shifts';
@@ -54,6 +56,13 @@ export class HomeComponent implements OnInit {
 
   /** True while a clock-in or end-break call is in flight. */
   protected readonly isActing = signal(false);
+
+  /**
+   * What the last failed clock-in or end-break said. Rendered outside the
+   * hero: a rejected clock-in re-reads the shift, and if the server says on
+   * shift the hero goes away, but the explanation has to stay.
+   */
+  protected readonly shiftActionError = signal('');
 
   /**
    * Copy is final shipping text from the design asset (API map, design row
@@ -105,7 +114,7 @@ export class HomeComponent implements OnInit {
    * D2).
    */
   protected clockIn(): void {
-    this.startWork(this.shiftService.clockIn());
+    this.startWork('clockIn', this.shiftService.clockIn());
   }
 
   /**
@@ -113,28 +122,42 @@ export class HomeComponent implements OnInit {
    * through Home (API map, design row D11).
    */
   protected endBreak(): void {
-    this.startWork(this.shiftService.endBreak());
+    this.startWork('endBreak', this.shiftService.endBreak());
   }
 
   /**
    * The held shift already reflects the server's answer by the time `next`
    * runs, so the route gate sees on shift when the navigation lands.
    */
-  private startWork(transition: Observable<ShiftState>): void {
+  private startWork(kind: ShiftActionKind, transition: Observable<ShiftState>): void {
     this.isActing.set(true);
+    this.shiftActionError.set('');
 
     transition.subscribe({
       next: () => {
         this.isActing.set(false);
         this.router.navigateByUrl(DEFAULT_SIGNED_IN_ROUTE);
       },
-      error: () => {
-        // What a failed shift action says, and the resync behind it, belong to
-        // the shift-action failure story (LET-146). Until then the button is
-        // simply offered again.
+      error: (error: unknown) => {
         this.isActing.set(false);
+        this.shiftActionFailed(kind, error);
       },
     });
+  }
+
+  /**
+   * The same failure handling as the account menu's: a rejected transition
+   * re-reads the shift so the screen matches the server, and an unreachable
+   * backend leaves it as it was.
+   */
+  private shiftActionFailed(kind: ShiftActionKind, error: unknown): void {
+    const failure = shiftActionFailure(kind, error);
+
+    this.shiftActionError.set(failure.message);
+
+    if (failure.resync) {
+      this.shiftService.refresh();
+    }
   }
 
   private loadSchedule(): void {

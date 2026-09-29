@@ -10,6 +10,16 @@ import { AppShellComponent } from './app-shell';
 import { IAuthService } from '../../auth/auth.service';
 import { Employee, EmployeeRole } from '../../models/auth/employee.model';
 import { ShiftStatus } from '../../models/shift/shift-status.model';
+import {
+  CLOCK_IN_REJECTED_MESSAGE,
+  CLOCK_IN_UNREACHABLE_MESSAGE,
+  CLOCK_OUT_REJECTED_MESSAGE,
+  CLOCK_OUT_UNREACHABLE_MESSAGE,
+  END_BREAK_REJECTED_MESSAGE,
+  END_BREAK_UNREACHABLE_MESSAGE,
+  START_BREAK_REJECTED_MESSAGE,
+  START_BREAK_UNREACHABLE_MESSAGE,
+} from '../../shift/shift-action-messages';
 import { ShiftService } from '../../shift/shift.service';
 import { StubShiftService } from '../../shift/testing/stub-shift.service';
 import { AUTH_SERVICE, SHIFT_SERVICE } from '../../tokens';
@@ -958,18 +968,194 @@ describe('AppShellComponent shift indicator, fed by the real ShiftService', () =
       respond('/v1/employees/me/clock-out', 'OffShift');
     });
 
-    it('on failure, leaves the status as it was, stays put, and offers the action again', () => {
+    it('on an unreachable backend, leaves the status as it was, stays put, and offers the action again', () => {
       signInAs('OnShift');
       choose('Clock out');
       httpMock
         .expectOne({ method: 'POST', url: '/v1/employees/me/clock-out' })
-        .flush(null, { status: 409, statusText: 'Conflict' });
+        .error(new ProgressEvent('error'));
       fixture.detectChanges();
 
       expect(shiftIndicatorText()).toBe('On the clock');
       expect(navigate).not.toHaveBeenCalled();
       expect(isMenuOpen()).toBe(true);
       expect(menuItem('Clock out')?.disabled).toBe(false);
+    });
+
+    /**
+     * What a failed shift action says, and whether the shift is re-read behind
+     * it (LET-146). Driven through the real service, so the re-read is a real
+     * request that `httpMock.verify()` would catch if it went unasked or
+     * unexpected.
+     */
+    describe('when the action fails', () => {
+      interface ActionCase {
+        label: string;
+        url: string;
+        from: ShiftStatus;
+        rejected: string;
+        unreachable: string;
+      }
+
+      const ACTIONS: readonly ActionCase[] = [
+        {
+          label: 'Clock in',
+          url: '/v1/employees/me/clock-in',
+          from: 'OffShift',
+          rejected: CLOCK_IN_REJECTED_MESSAGE,
+          unreachable: CLOCK_IN_UNREACHABLE_MESSAGE,
+        },
+        {
+          label: 'Clock out',
+          url: '/v1/employees/me/clock-out',
+          from: 'OnShift',
+          rejected: CLOCK_OUT_REJECTED_MESSAGE,
+          unreachable: CLOCK_OUT_UNREACHABLE_MESSAGE,
+        },
+        {
+          label: 'Start break',
+          url: '/v1/employees/me/start-break',
+          from: 'OnShift',
+          rejected: START_BREAK_REJECTED_MESSAGE,
+          unreachable: START_BREAK_UNREACHABLE_MESSAGE,
+        },
+        {
+          label: 'End break',
+          url: '/v1/employees/me/end-break',
+          from: 'OnBreak',
+          rejected: END_BREAK_REJECTED_MESSAGE,
+          unreachable: END_BREAK_UNREACHABLE_MESSAGE,
+        },
+      ];
+
+      function reject(url: string): void {
+        httpMock
+          .expectOne({ method: 'POST', url })
+          .flush(null, { status: 409, statusText: 'Conflict' });
+        fixture.detectChanges();
+      }
+
+      function failToReach(url: string): void {
+        httpMock.expectOne({ method: 'POST', url }).error(new ProgressEvent('error'));
+        fixture.detectChanges();
+      }
+
+      function answerReread(status: ShiftStatus): void {
+        httpMock
+          .expectOne({ method: 'GET', url: SHIFT_URL })
+          .flush({ data: { status, onDuty: status === 'OnShift' }, meta: {} });
+        fixture.detectChanges();
+      }
+
+      function alertText(): string | null {
+        const alert = fixture.nativeElement.querySelector(
+          '.dropdown-menu [role="alert"]',
+        ) as HTMLElement | null;
+
+        return alert ? (alert.textContent?.trim() ?? '') : null;
+      }
+
+      it.each(ACTIONS)(
+        'a 409 from "$label" shows its rejection message and re-reads the shift',
+        ({ label, url, from, rejected }) => {
+          signInAs(from);
+          choose(label);
+          reject(url);
+
+          expect(alertText()).toBe(rejected);
+          answerReread(from);
+          expect(navigate).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(ACTIONS)(
+        'an unreachable backend on "$label" shows its try-again message and does not re-read',
+        ({ label, url, from, unreachable }) => {
+          signInAs(from);
+          choose(label);
+          failToReach(url);
+
+          expect(alertText()).toBe(unreachable);
+          httpMock.expectNone({ method: 'GET', url: SHIFT_URL });
+          expect(navigate).not.toHaveBeenCalled();
+        },
+      );
+
+      it('leaves the header and menu as they were before the attempt when unreachable', () => {
+        signInAs('OnShift');
+        choose('Start break');
+        failToReach('/v1/employees/me/start-break');
+
+        expect(shiftIndicatorText()).toBe('On the clock');
+        expect(menuLabels().slice(0, 2)).toEqual(['Start break', 'Clock out']);
+      });
+
+      it('shows the server\'s actual status in the header and menu once the re-read lands', () => {
+        signInAs('OffShift');
+        choose('Clock in');
+        reject('/v1/employees/me/clock-in');
+
+        expect(shiftIndicatorText()).toBe('Not on the clock');
+
+        answerReread('OnBreak');
+
+        expect(shiftIndicatorText()).toBe('On break');
+        expect(menuLabels().slice(0, 2)).toEqual(['End break', 'Clock out']);
+        expect(alertText()).toBe(CLOCK_IN_REJECTED_MESSAGE);
+      });
+
+      it('shows a different message for a 409 than for an unreachable backend', () => {
+        signInAs('OnShift');
+        choose('Clock out');
+        reject('/v1/employees/me/clock-out');
+        answerReread('OnShift');
+        const rejectedText = alertText();
+
+        menuItem('Clock out')?.click();
+        fixture.detectChanges();
+        failToReach('/v1/employees/me/clock-out');
+
+        expect(rejectedText).toBe(CLOCK_OUT_REJECTED_MESSAGE);
+        expect(alertText()).toBe(CLOCK_OUT_UNREACHABLE_MESSAGE);
+      });
+
+      it('shows each action\'s own message when two actions fail for the same reason', () => {
+        signInAs('OnShift');
+        choose('Start break');
+        failToReach('/v1/employees/me/start-break');
+        const startBreakText = alertText();
+
+        menuItem('Clock out')?.click();
+        fixture.detectChanges();
+        failToReach('/v1/employees/me/clock-out');
+
+        expect(startBreakText).toBe(START_BREAK_UNREACHABLE_MESSAGE);
+        expect(alertText()).toBe(CLOCK_OUT_UNREACHABLE_MESSAGE);
+      });
+
+      it('clears the message when another action is tried', () => {
+        signInAs('OnShift');
+        choose('Start break');
+        failToReach('/v1/employees/me/start-break');
+
+        menuItem('Start break')?.click();
+        fixture.detectChanges();
+
+        expect(alertText()).toBeNull();
+        respond('/v1/employees/me/start-break', 'OnBreak');
+      });
+
+      it('clears the message when the account menu is closed and reopened', () => {
+        signInAs('OnShift');
+        choose('Start break');
+        failToReach('/v1/employees/me/start-break');
+
+        openAccountMenu();
+        openAccountMenu();
+
+        expect(isMenuOpen()).toBe(true);
+        expect(alertText()).toBeNull();
+      });
     });
   });
 });

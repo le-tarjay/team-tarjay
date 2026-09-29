@@ -58,6 +58,12 @@
 
       @if (isAccountMenuOpen()) {
         <div class="dropdown-menu dropdown-menu-end show">
+          @if (shiftActionError(); as message) {
+            <div class="alert alert-danger py-2 mx-2 shift-action-error" role="alert">
+              {{ message }}
+            </div>
+          }
+
           @for (action of shiftActions(); track action.kind) {
             <button
               type="button"

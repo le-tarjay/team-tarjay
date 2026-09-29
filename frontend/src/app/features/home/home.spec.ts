@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -12,6 +13,12 @@ import {
   WorkedShift,
 } from '../../core/models/schedule/scheduled-shift.model';
 import { StubScheduleService } from '../../core/schedule/testing/stub-schedule.service';
+import {
+  CLOCK_IN_REJECTED_MESSAGE,
+  CLOCK_IN_UNREACHABLE_MESSAGE,
+  END_BREAK_REJECTED_MESSAGE,
+  END_BREAK_UNREACHABLE_MESSAGE,
+} from '../../core/shift/shift-action-messages';
 import { StubShiftService } from '../../core/shift/testing/stub-shift.service';
 import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from '../../core/tokens';
 
@@ -220,6 +227,82 @@ describe('HomeComponent', () => {
 
       expect(navigate).not.toHaveBeenCalled();
       expect(button(root, 'Clock in')?.disabled).toBe(false);
+    });
+  });
+
+  describe('when the hero\'s action fails', () => {
+    const CONFLICT = new HttpErrorResponse({ status: 409, statusText: 'Conflict' });
+    const UNREACHABLE = new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' });
+
+    function alertText(root: HTMLElement): string | undefined {
+      return root.querySelector('[role="alert"]')?.textContent?.trim();
+    }
+
+    function fail(
+      action: 'clockIn' | 'endBreak',
+      error: HttpErrorResponse,
+    ): { root: HTMLElement; refresh: ReturnType<typeof vi.spyOn> } {
+      shiftService.report(action === 'clockIn' ? 'OffShift' : 'OnBreak');
+      vi.spyOn(shiftService, action).mockReturnValue(throwError(() => error));
+      const refresh = vi.spyOn(shiftService, 'refresh');
+      vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      const root = render();
+
+      button(root, action === 'clockIn' ? 'Clock in' : 'End break')?.click();
+      fixture.detectChanges();
+
+      return { root, refresh };
+    }
+
+    it('a 409 from "Clock in" shows the clock-in rejection and re-reads the shift', () => {
+      const { root, refresh } = fail('clockIn', CONFLICT);
+
+      expect(alertText(root)).toBe(CLOCK_IN_REJECTED_MESSAGE);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('a 409 from "End break" shows the end-break rejection and re-reads the shift', () => {
+      const { root, refresh } = fail('endBreak', CONFLICT);
+
+      expect(alertText(root)).toBe(END_BREAK_REJECTED_MESSAGE);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('an unreachable backend on "Clock in" asks to try again and leaves the shift alone', () => {
+      const { root, refresh } = fail('clockIn', UNREACHABLE);
+
+      expect(alertText(root)).toBe(CLOCK_IN_UNREACHABLE_MESSAGE);
+      expect(refresh).not.toHaveBeenCalled();
+      expect(root.querySelector('.home-status-pill')?.textContent?.trim()).toBe('Not on the clock');
+      expect(button(root, 'Clock in')?.disabled).toBe(false);
+    });
+
+    it('an unreachable backend on "End break" asks to try again and leaves the shift alone', () => {
+      const { root, refresh } = fail('endBreak', UNREACHABLE);
+
+      expect(alertText(root)).toBe(END_BREAK_UNREACHABLE_MESSAGE);
+      expect(refresh).not.toHaveBeenCalled();
+      expect(root.querySelector('.home-status-pill')?.textContent?.trim()).toBe('On break');
+    });
+
+    it('keeps the rejection message on screen when the re-read takes the hero away', () => {
+      const { root } = fail('clockIn', CONFLICT);
+
+      shiftService.report('OnShift');
+      fixture.detectChanges();
+
+      expect(heroHeading(root)).toBeUndefined();
+      expect(alertText(root)).toBe(CLOCK_IN_REJECTED_MESSAGE);
+    });
+
+    it('clears the message when the action is tried again', () => {
+      const { root } = fail('clockIn', UNREACHABLE);
+
+      vi.spyOn(shiftService, 'clockIn').mockReturnValue(NEVER);
+      button(root, 'Clock in')?.click();
+      fixture.detectChanges();
+
+      expect(alertText(root)).toBeUndefined();
     });
   });
 

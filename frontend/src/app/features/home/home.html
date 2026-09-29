@@ -1,4 +1,10 @@
 <div class="container py-4">
+  @if (shiftActionError(); as message) {
+    <div class="alert alert-danger" role="alert">
+      {{ message }}
+    </div>
+  }
+
   @if (hero(); as hero) {
     <section class="card home-hero mb-4" aria-labelledby="home-hero-greeting">
       <div
