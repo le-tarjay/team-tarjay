@@ -60,6 +60,13 @@ const START_BREAK_REJECTED_MESSAGE =
 const START_BREAK_ENDPOINT_GLOB = '**/v1/employees/me/start-break';
 
 /**
+ * How much of Device A's refresh window the rejected-transition test keeps in
+ * hand for its own assertions. The window is measured before Device A acts, so
+ * everything after that check has to finish before the refresh tick too.
+ */
+const REJECTED_TEST_ASSERTION_MARGIN_MS = 15_000;
+
+/**
  * Two days of the Associate's seeded week, mirroring
  * `api: Tarjay.Team.Domain/Schedule/ScheduleSeed` for employee 10041.
  *
@@ -70,6 +77,17 @@ const START_BREAK_ENDPOINT_GLOB = '**/v1/employees/me/start-break';
  */
 const ASSOCIATE_TUESDAY = { timeRange: '9:00 AM – 3:00 PM', hours: '6h' } as const;
 const ASSOCIATE_DAY_OFF = 'Wednesday';
+
+/**
+ * The Associate's seeded weekly total: Monday 8h, Tuesday 6h, Thursday 8h,
+ * Friday 8h and Saturday 8h, from the same seed.
+ *
+ * This one does include Monday. It holds wherever the browser and the API
+ * agree on the date, which CI always does because it runs in UTC. A local run
+ * in a browser west of UTC late on a Sunday can see Monday drop out, and this
+ * total with it.
+ */
+const ASSOCIATE_WEEK_TOTAL_HOURS = 38;
 
 const WEEKDAYS = [
   'Monday',
@@ -179,9 +197,14 @@ async function expectCurrentWeekSchedule(page: Page): Promise<void> {
   const dayOff = rows.filter({ hasText: ASSOCIATE_DAY_OFF }).getByRole('cell');
   await expect(dayOff.nth(3)).toHaveText('Off');
 
-  // The week's total is shown, and it is the sum of the days above.
+  // The week's total is shown, and it is the seed's total for the week. This
+  // anchors it to the API's data, not only to the page's own rows.
   const total = page.getByRole('group', { name: 'This week' });
-  await expect(total).toContainText(/\d+(\.\d+)?h/);
+  await expect(total).toHaveText(
+    new RegExp(`^\\s*This week\\s*${ASSOCIATE_WEEK_TOTAL_HOURS}h\\s*$`),
+  );
+
+  // And it is the sum of the days above.
 
   const dayHours = await Promise.all(
     week.map((_, index) => rows.nth(index + 1).getByRole('cell').nth(4).textContent()),
@@ -419,15 +442,19 @@ test.describe('clock-in, break, and shift gating', () => {
         // at its next token refresh. Its access token stays valid until then,
         // which is what lets it reach the API below. Bound that rather than
         // assume it, the same way `tests/session/single-active-session.spec.ts`
-        // does.
+        // does. The bound keeps a margin, because every assertion below also
+        // has to land before that tick.
         const windowUsedMs = Date.now() - deviceA.signedInAt;
+        const setupBudgetMs = SESSION_REFRESH_INTERVAL_MS - REJECTED_TEST_ASSERTION_MARGIN_MS;
         expect(
           windowUsedMs,
           `Device A's first refresh was due ${SESSION_REFRESH_INTERVAL_MS}ms after its ` +
-            `sign-in, and setting this test up took ${windowUsedMs}ms. Past that tick ` +
-            'Device A is signed out, so this run proves nothing about the rejected ' +
-            'transition. Treat it as a slow runner, not as a defect.',
-        ).toBeLessThan(SESSION_REFRESH_INTERVAL_MS);
+            `sign-in. Setting this test up may take ${setupBudgetMs}ms, leaving ` +
+            `${REJECTED_TEST_ASSERTION_MARGIN_MS}ms for the assertions, and it took ` +
+            `${windowUsedMs}ms. Past the refresh tick Device A is signed out, so this ` +
+            'run proves nothing about the rejected transition. Treat it as a slow ' +
+            'runner, not as a defect.',
+        ).toBeLessThan(setupBudgetMs);
 
         await expect(shiftIndicator(deviceA.page)).toHaveText(SHIFT_LABELS.OnShift);
 
