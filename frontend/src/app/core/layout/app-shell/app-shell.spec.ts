@@ -127,6 +127,16 @@ describe('AppShellComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * The full role-based nav renders only on shift. The role-nav specs below
+   * describe that nav, so they start from here rather than from an unread shift.
+   */
+  function signInOnShift(overrides: Partial<Employee> = {}): void {
+    signIn(overrides);
+    shiftService.report('OnShift');
+    fixture.detectChanges();
+  }
+
   function navItemElements(): HTMLElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('.navbar-nav .nav-link'));
   }
@@ -190,14 +200,14 @@ describe('AppShellComponent', () => {
 
   describe('shared nav items', () => {
     it.each(ROLE_LABELS)('render in fixed order for a $role', ({ role }) => {
-      signIn({ role });
+      signInOnShift({ role });
 
       expect(navLabels().slice(0, SHARED_LABELS.length)).toEqual(SHARED_LABELS);
     });
 
     it('keep the shared items ahead of exactly one role-specific item, for every role', () => {
       for (const { role } of ROLE_LABELS) {
-        signIn({ role });
+        signInOnShift({ role });
 
         expect(navLabels()).toHaveLength(SHARED_LABELS.length + 1);
         expect(navLabels().slice(0, SHARED_LABELS.length)).toEqual(SHARED_LABELS);
@@ -205,7 +215,7 @@ describe('AppShellComponent', () => {
     });
 
     it('does not render a "Price check" item, which has no page or route yet', () => {
-      signIn();
+      signInOnShift();
 
       expect(navLabels()).not.toContain('Price check');
     });
@@ -213,25 +223,29 @@ describe('AppShellComponent', () => {
 
   describe('role-specific nav item', () => {
     it('gives a Receiving Associate the "Receiving" item', () => {
-      signIn({ role: 'ReceivingAssociate', jobFunction: 'Receiving' });
+      signInOnShift({ role: 'ReceivingAssociate', jobFunction: 'Receiving' });
 
       expect(roleSpecificLabel()).toBe('Receiving');
     });
 
     it('gives a Receiving Associate "Receiving" whatever their job function says', () => {
-      signIn({ role: 'ReceivingAssociate', jobFunction: 'Customer Support' });
+      signInOnShift({ role: 'ReceivingAssociate', jobFunction: 'Customer Support' });
 
       expect(roleSpecificLabel()).toBe('Receiving');
     });
 
     it('gives the Customer Support job function the "Fulfillment" item', () => {
-      signIn({ role: 'Associate', department: 'Customer Support', jobFunction: 'Customer Support' });
+      signInOnShift({
+        role: 'Associate',
+        department: 'Customer Support',
+        jobFunction: 'Customer Support',
+      });
 
       expect(roleSpecificLabel()).toBe('Fulfillment');
     });
 
     it('matches the Customer Support job function regardless of casing or padding', () => {
-      signIn({ role: 'Associate', jobFunction: '  customer support ' });
+      signInOnShift({ role: 'Associate', jobFunction: '  customer support ' });
 
       expect(roleSpecificLabel()).toBe('Fulfillment');
     });
@@ -252,7 +266,7 @@ describe('AppShellComponent', () => {
     ])(
       'gives a $role doing $jobFunction the default "$expected" item',
       ({ role, jobFunction, expected }) => {
-        signIn({ role, jobFunction });
+        signInOnShift({ role, jobFunction });
 
         expect(roleSpecificLabel()).toBe(expected);
       },
@@ -261,7 +275,7 @@ describe('AppShellComponent', () => {
     it.each(['', '   '])(
       'still gives a stocking item when the job function resolves to nothing ("%s")',
       (jobFunction) => {
-        signIn({ role: 'Associate', jobFunction });
+        signInOnShift({ role: 'Associate', jobFunction });
 
         expect(roleSpecificLabel()).toBe('My tasks');
       },
@@ -269,7 +283,7 @@ describe('AppShellComponent', () => {
 
     it('never leaves the role-specific slot empty for any role', () => {
       for (const { role } of ROLE_LABELS) {
-        signIn({ role, jobFunction: 'Something Corporate Invented' });
+        signInOnShift({ role, jobFunction: 'Something Corporate Invented' });
 
         expect(roleSpecificLabel()).not.toBe('');
       }
@@ -283,7 +297,7 @@ describe('AppShellComponent', () => {
      * to `/login`.
      */
     it('renders the role-specific item disabled while it has no route', () => {
-      signIn({ role: 'ReceivingAssociate' });
+      signInOnShift({ role: 'ReceivingAssociate' });
 
       const roleSpecific = navItemElements()[SHARED_LABELS.length] as HTMLButtonElement;
 
@@ -330,7 +344,7 @@ describe('AppShellComponent', () => {
       const router = TestBed.inject(Router);
       const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
-      signIn({ role: 'StoreManager' });
+      signInOnShift({ role: 'StoreManager' });
 
       expect(identityText()).not.toBe('');
       expect(navLabels()).toHaveLength(SHARED_LABELS.length + 1);
@@ -359,7 +373,7 @@ describe('AppShellComponent', () => {
    */
   describe('a session ended elsewhere', () => {
     it('clears the header identity and reverts the nav, with no employee action', () => {
-      signIn({ role: 'StoreManager' });
+      signInOnShift({ role: 'StoreManager' });
 
       expect(identityText()).not.toBe('');
 
@@ -678,6 +692,132 @@ describe('AppShellComponent', () => {
   });
 
   /**
+   * The full role-based nav is suspended off shift and on break, and nothing is
+   * shown until the server has reported a shift (LET-142, and API map design
+   * rows D9 and D15).
+   */
+  describe('shift-gated nav', () => {
+    const SUSPENDED_LABELS = ['Home', 'My schedule'];
+
+    function reportShift(status: ShiftStatus): void {
+      shiftService.report(status);
+      fixture.detectChanges();
+    }
+
+    function navLink(label: string): HTMLAnchorElement | undefined {
+      return navItemElements().find((item) => item.textContent?.trim() === label) as
+        HTMLAnchorElement | undefined;
+    }
+
+    it.each(ROLE_LABELS)('shows exactly Home and My schedule to a $role off shift', ({ role }) => {
+      signIn({ role });
+      reportShift('OffShift');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+    });
+
+    it.each(ROLE_LABELS)('shows exactly Home and My schedule to a $role on break', ({ role }) => {
+      signIn({ role });
+      reportShift('OnBreak');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+    });
+
+    it.each<ShiftStatus>(['OffShift', 'OnBreak'])(
+      'renders Home and My schedule as real links to their screens when %s',
+      (status) => {
+        signIn();
+        reportShift(status);
+
+        expect(navLink('Home')?.tagName).toBe('A');
+        expect(navLink('Home')?.getAttribute('href')).toBe('/home');
+        expect(navLink('My schedule')?.tagName).toBe('A');
+        expect(navLink('My schedule')?.getAttribute('href')).toBe('/schedule');
+      },
+    );
+
+    it.each<ShiftStatus>(['OffShift', 'OnBreak'])(
+      'hides the full nav entirely rather than disabling it when %s',
+      (status) => {
+        signIn({ role: 'StoreManager' });
+        reportShift(status);
+
+        expect(navItemElements()).toHaveLength(SUSPENDED_LABELS.length);
+        expect(fixture.nativeElement.querySelector('.navbar-nav .disabled')).toBeNull();
+      },
+    );
+
+    it.each(ROLE_LABELS)(
+      'shows a $role on shift the full role-based nav, as before',
+      ({ role }) => {
+        signIn({ role });
+        reportShift('OnShift');
+
+        expect(navLabels()).toHaveLength(SHARED_LABELS.length + 1);
+        expect(navLabels().slice(0, SHARED_LABELS.length)).toEqual(SHARED_LABELS);
+        expect(navLabels()).not.toContain('Home');
+        expect(navLabels()).not.toContain('My schedule');
+      },
+    );
+
+    it('brings the full nav back the moment an off-shift employee is on shift', () => {
+      signIn({ role: 'ReceivingAssociate' });
+      reportShift('OffShift');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+
+      reportShift('OnShift');
+
+      expect(navLabels()).toEqual([...SHARED_LABELS, 'Receiving']);
+    });
+
+    it('brings the full nav back the moment a break ends', () => {
+      signIn({ role: 'Associate' });
+      reportShift('OnBreak');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+
+      reportShift('OnShift');
+
+      expect(navLabels()).toEqual([...SHARED_LABELS, 'My tasks']);
+    });
+
+    it('collapses the full nav the moment a break starts', () => {
+      signIn();
+      reportShift('OnShift');
+      reportShift('OnBreak');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+    });
+
+    it('shows no nav item at all before the first shift-status read lands', () => {
+      signIn({ role: 'StoreManager' });
+
+      expect(navItemElements()).toEqual([]);
+    });
+
+    it('never shows the full nav while an off-duty read is in flight', () => {
+      signIn();
+
+      expect(navLabels()).not.toContain('Sale');
+
+      reportShift('OffShift');
+
+      expect(navLabels()).toEqual(SUSPENDED_LABELS);
+    });
+
+    it('shows no nav item once a failed read clears the held status', () => {
+      signIn();
+      reportShift('OnShift');
+
+      shiftService.clear();
+      fixture.detectChanges();
+
+      expect(navItemElements()).toEqual([]);
+    });
+  });
+
+  /**
    * `../../../../../e2e` locates every element by role and accessible name
    * only, so a markup change here that drops one breaks a suite this surface
    * cannot see — see `CONVENTIONS.md`, "What this surface owes the surfaces
@@ -685,7 +825,7 @@ describe('AppShellComponent', () => {
    */
   describe('accessible names the e2e suite locates by', () => {
     it.each(SHARED_LABELS)('keeps "%s" a real link carrying its own name', (label) => {
-      signIn();
+      signInOnShift();
 
       const link = Array.from(
         fixture.nativeElement.querySelectorAll('.navbar-nav a.nav-link'),
@@ -819,6 +959,70 @@ describe('AppShellComponent shift indicator, fed by the real ShiftService', () =
     fixture.detectChanges();
 
     expect(shiftIndicatorText()).toBe('On the clock');
+  });
+
+  describe('the shift-gated nav', () => {
+    function navLabels(): string[] {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('.navbar-nav .nav-link') as NodeListOf<HTMLElement>,
+      ).map((item) => item.textContent?.trim() ?? '');
+    }
+
+    function respond(method: 'GET' | 'POST', url: string, status: ShiftStatus): void {
+      httpMock
+        .expectOne({ method, url })
+        .flush({ data: { status, onDuty: status === 'OnShift' }, meta: {} });
+      fixture.detectChanges();
+    }
+
+    it('shows no nav item after sign-in until the first read lands', () => {
+      signIn();
+
+      expect(navLabels()).toEqual([]);
+
+      respond('GET', SHIFT_URL, 'OffShift');
+
+      expect(navLabels()).toEqual(['Home', 'My schedule']);
+    });
+
+    it('shows no nav item when the first read fails', () => {
+      signIn();
+
+      httpMock.expectOne(SHIFT_URL).flush(null, { status: 503, statusText: 'Service Unavailable' });
+      fixture.detectChanges();
+
+      expect(navLabels()).toEqual([]);
+    });
+
+    it('brings the full nav back from a clock-in response', () => {
+      signIn();
+      respond('GET', SHIFT_URL, 'OffShift');
+
+      TestBed.inject(ShiftService).clockIn().subscribe();
+      respond('POST', '/v1/employees/me/clock-in', 'OnShift');
+
+      expect(navLabels()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'My tasks']);
+    });
+
+    it('brings the full nav back from an end-break response', () => {
+      signIn();
+      respond('GET', SHIFT_URL, 'OnBreak');
+
+      TestBed.inject(ShiftService).endBreak().subscribe();
+      respond('POST', '/v1/employees/me/end-break', 'OnShift');
+
+      expect(navLabels()).toEqual(['Sale', 'Products', 'Sales', 'Buyers', 'My tasks']);
+    });
+
+    it('keeps the suspended nav when the server says a break has started', () => {
+      signIn();
+      respond('GET', SHIFT_URL, 'OnShift');
+
+      TestBed.inject(ShiftService).startBreak().subscribe();
+      respond('POST', '/v1/employees/me/start-break', 'OnBreak');
+
+      expect(navLabels()).toEqual(['Home', 'My schedule']);
+    });
   });
 
   /**

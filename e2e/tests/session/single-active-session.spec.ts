@@ -1,6 +1,12 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
-import { signIn, SIGNED_IN_URL } from '../../fixtures/auth';
+import {
+  ON_SHIFT_URL,
+  SHIFT_LABELS,
+  shiftIndicator,
+  signIn,
+  signInOnShift,
+} from '../../fixtures/auth';
 import { ASSOCIATE, type SeededEmployee } from '../../fixtures/credentials';
 import {
   LOGIN_URL,
@@ -52,15 +58,34 @@ interface Device {
  * only way to authenticate here — `AuthService` keeps the session in an
  * in-memory signal, so there is no `storageState` to reuse
  * (`CONVENTIONS.md`, "Auth in tests").
+ *
+ * The first device signs in and clocks in from Home, so it is on Sale, on
+ * shift. The shift belongs to the employee, not the session, so the second
+ * device signing in as the same employee lands straight on Sale, still on the
+ * clock, with no clock-in of its own.
+ *
+ * `signedInAt` is taken before the sign-in is submitted. The refresh timer
+ * starts when the sign-in lands, so this errs early, which only makes the
+ * refresh-window check below stricter.
  */
-async function signInOnDevice(browser: Browser, employee: SeededEmployee): Promise<Device> {
+async function signInOnDevice(
+  browser: Browser,
+  employee: SeededEmployee,
+  shift: 'clockIn' | 'alreadyOnShift',
+): Promise<Device> {
   const context = await browser.newContext();
   const page = await context.newPage();
+  const signedInAt = Date.now();
 
-  await signIn(page, employee);
-  await expect(page).toHaveURL(SIGNED_IN_URL);
+  if (shift === 'clockIn') {
+    await signInOnShift(page, employee);
+  } else {
+    await signIn(page, employee);
+    await expect(shiftIndicator(page)).toHaveText(SHIFT_LABELS.OnShift);
+    await expect(page).toHaveURL(ON_SHIFT_URL);
+  }
 
-  return { page, signedInAt: Date.now(), close: () => context.close() };
+  return { page, signedInAt, close: () => context.close() };
 }
 
 /** One sample of what a terminal is showing. */
@@ -159,8 +184,8 @@ test.describe('single active session', () => {
       // the suite's own setup.
       test.setTimeout(SESSION_END_OBSERVATION_TIMEOUT_MS + 90_000);
 
-      const deviceA = await signInOnDevice(browser, ASSOCIATE);
-      const deviceB = await signInOnDevice(browser, ASSOCIATE);
+      const deviceA = await signInOnDevice(browser, ASSOCIATE, 'clockIn');
+      const deviceB = await signInOnDevice(browser, ASSOCIATE, 'alreadyOnShift');
 
       try {
         // Device A is deliberately left alone from here. The epic's definition
@@ -175,7 +200,7 @@ test.describe('single active session', () => {
         // Device B is still working, which is the half of the mechanism a
         // test on Device A alone would miss: the admin call terminates the
         // employee's *other* sessions, not all of them.
-        await expect(deviceB.page).toHaveURL(SIGNED_IN_URL);
+        await expect(deviceB.page).toHaveURL(ON_SHIFT_URL);
       } finally {
         await deviceA.close();
         await deviceB.close();
@@ -187,8 +212,8 @@ test.describe('single active session', () => {
     'the device that ended the other session shows no sign of having done so',
     { tag: '@regression' },
     async ({ browser }) => {
-      const deviceA = await signInOnDevice(browser, ASSOCIATE);
-      const deviceB = await signInOnDevice(browser, ASSOCIATE);
+      const deviceA = await signInOnDevice(browser, ASSOCIATE, 'clockIn');
+      const deviceB = await signInOnDevice(browser, ASSOCIATE, 'alreadyOnShift');
 
       try {
         // No banner, no "this ended a session on Register 3" notice, nothing.
@@ -196,9 +221,9 @@ test.describe('single active session', () => {
         // would fire on the happy path of most sign-ins (design row 5).
         await expect(deviceB.page.getByRole('alert')).toHaveCount(0);
 
-        // It is signed in as the employee who just signed in, on the screen
-        // every role lands on, with the normal signed-in shell around it.
-        await expect(deviceB.page).toHaveURL(SIGNED_IN_URL);
+        // It is signed in as the employee who just signed in, on Sale with the
+        // shift still running, with the normal signed-in shell around it.
+        await expect(deviceB.page).toHaveURL(ON_SHIFT_URL);
         await expect(deviceB.page.getByText(ASSOCIATE.name)).toBeVisible();
         await expect(deviceB.page.getByRole('button', { name: 'Account' })).toBeVisible();
       } finally {
@@ -214,7 +239,7 @@ test.describe('single active session', () => {
     async ({ browser }) => {
       test.setTimeout(SESSION_END_OBSERVATION_TIMEOUT_MS + 90_000);
 
-      const deviceA = await signInOnDevice(browser, ASSOCIATE);
+      const deviceA = await signInOnDevice(browser, ASSOCIATE, 'clockIn');
 
       try {
         // Start the action before the session is terminated: search the
@@ -231,7 +256,7 @@ test.describe('single active session', () => {
         });
         await expect(continueToPayment).toBeDisabled();
 
-        const deviceB = await signInOnDevice(browser, ASSOCIATE);
+        const deviceB = await signInOnDevice(browser, ASSOCIATE, 'alreadyOnShift');
 
         try {
           // Device A's session is now terminated in Keycloak. Finishing the
@@ -264,7 +289,7 @@ test.describe('single active session', () => {
           await expect(
             deviceA.page.getByText('No products added yet.'),
           ).toBeHidden();
-          await expect(deviceA.page).toHaveURL(SIGNED_IN_URL);
+          await expect(deviceA.page).toHaveURL(ON_SHIFT_URL);
 
           // And only then, at the refresh that follows, does the terminal go
           // back to Login — mid-task, with no warning and nothing preserved.
@@ -285,7 +310,7 @@ test.describe('single active session', () => {
     'a deliberate logout returns to a plain Login screen with no explanation',
     { tag: '@regression' },
     async ({ browser }) => {
-      const device = await signInOnDevice(browser, ASSOCIATE);
+      const device = await signInOnDevice(browser, ASSOCIATE, 'clockIn');
 
       try {
         await device.page.getByRole('button', { name: 'Account' }).click();

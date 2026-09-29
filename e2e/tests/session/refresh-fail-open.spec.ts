@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { signIn, SIGNED_IN_URL } from '../../fixtures/auth';
+import { ON_SHIFT_URL, signInOnShift } from '../../fixtures/auth';
 import { ASSOCIATE } from '../../fixtures/credentials';
 import {
   SESSION_END_OBSERVATION_TIMEOUT_MS,
@@ -41,8 +41,9 @@ test.describe('background refresh fail-open', () => {
     async ({ page }) => {
       test.setTimeout(SESSION_END_OBSERVATION_TIMEOUT_MS + 90_000);
 
-      await signIn(page, ASSOCIATE);
-      await expect(page).toHaveURL(SIGNED_IN_URL);
+      // On shift, because the proof below is building a sale, and Sale is
+      // closed to an employee who is off shift.
+      await signInOnShift(page, ASSOCIATE);
 
       let failedRefreshes = 0;
 
@@ -65,7 +66,7 @@ test.describe('background refresh fail-open', () => {
         .toBeGreaterThan(0);
 
       // Still signed in, on the same screen, with the session intact.
-      await expect(page).toHaveURL(SIGNED_IN_URL);
+      await expect(page).toHaveURL(ON_SHIFT_URL);
       await expect(page.getByText(ASSOCIATE.name)).toBeVisible();
 
       // Deliberately silent, too. No error, and no persistent "reconnecting"
@@ -83,7 +84,7 @@ test.describe('background refresh fail-open', () => {
       await firstResult.click();
 
       await expect(page.getByRole('button', { name: 'Continue to Payment' })).toBeEnabled();
-      await expect(page).toHaveURL(SIGNED_IN_URL);
+      await expect(page).toHaveURL(ON_SHIFT_URL);
     },
   );
 });

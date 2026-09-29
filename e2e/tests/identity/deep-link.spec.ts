@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { shiftIndicator } from '../../fixtures/auth';
 import { ASSOCIATE, INVALID_PIN } from '../../fixtures/credentials';
 
 /**
@@ -10,9 +11,11 @@ import { ASSOCIATE, INVALID_PIN } from '../../fixtures/credentials';
  * succeeds. A guard that forwarded on failure would be worse than one that
  * never forwarded at all.
  *
- * `/products` is a shared nav item every role earns, so the role gate is not
- * what is under test here — only the unauthenticated redirect and the return
- * afterwards.
+ * `/schedule` is open to every role in every shift state, so neither the role
+ * gate nor the shift gate is under test here — only the unauthenticated
+ * redirect and the return afterwards. A full-nav route such as `/products`
+ * would not do: seeded employees start off shift, and the shift gate sends an
+ * off-shift employee from any full-nav route to Home.
  *
  * Neither test uses the `signIn` fixture, and that is load-bearing: it begins
  * with its own `page.goto('/login')`, which would discard the `returnUrl` the
@@ -21,12 +24,12 @@ import { ASSOCIATE, INVALID_PIN } from '../../fixtures/credentials';
  * The visitor is already on the login screen here, so both tests sign in from
  * where they stand.
  */
-const GATED_ROUTE = '/products';
+const GATED_ROUTE = '/schedule';
 
 /** What the guard appends when it sends an unauthenticated visitor to sign in. */
-const LOGIN_WITH_RETURN_URL = /\/login\?returnUrl=%2Fproducts$/;
+const LOGIN_WITH_RETURN_URL = /\/login\?returnUrl=%2Fschedule$/;
 
-const GATED_ROUTE_REACHED = /\/products$/;
+const GATED_ROUTE_REACHED = /\/schedule$/;
 
 test.describe('deep link into a gated route', () => {
   test(
@@ -43,6 +46,11 @@ test.describe('deep link into a gated route', () => {
       await page.getByLabel('PIN').fill(ASSOCIATE.pin);
       await page.getByRole('button', { name: 'Sign in' }).click();
 
+      await expect(page).toHaveURL(GATED_ROUTE_REACHED);
+
+      // Still there once the shift read has landed, whatever it said: the
+      // destination survives the shift gate as well as the sign-in bounce.
+      await expect(shiftIndicator(page)).toBeVisible();
       await expect(page).toHaveURL(GATED_ROUTE_REACHED);
     },
   );
