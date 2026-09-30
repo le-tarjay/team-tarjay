@@ -23,6 +23,51 @@
   }
 }
 
+// The state's way back to work — Clock in off shift, End break on break — is
+// the menu's primary action in the design asset. Weight rather than colour, so
+// it still reads as a menu item beside Clock out.
+.shift-action-primary {
+  font-weight: 600;
+}
+
+// A failed shift action's message sits at the top of the account menu. The menu
+// is absolutely positioned and sizes to its content, so without a width the
+// sentence would stretch it across the navbar.
+.shift-action-error {
+  width: 18rem;
+}
+
+// The header's shift status: grey off shift, green on shift, amber on break, as
+// in the mockup (Team-Targét.dc.html, header status). The mockup's green and
+// amber are design-system tokens whose values are not in the export, so
+// Bootstrap's own success and warning stand in; the grey is the mockup's. The
+// label carries the meaning too, so colour is never the only signal.
+.shift-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.shift-indicator-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.shift-indicator-dot-off {
+  background: #9a9a9a;
+}
+
+.shift-indicator-dot-on {
+  background: var(--bs-success);
+}
+
+.shift-indicator-dot-break {
+  background: var(--bs-warning);
+}
+
 .app-main {
   min-height: calc(100vh - 56px);
   background: #f5f6f8;

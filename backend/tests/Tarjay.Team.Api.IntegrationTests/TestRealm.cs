@@ -49,6 +49,17 @@ public static class TestRealm
     /// <summary>The claim the realm's <c>job function</c> protocol mapper projects.</summary>
     public const string JobFunctionClaim = "job_function";
 
+    /// <summary>The claim carrying the Employee ID — the realm's users are the IDs themselves.</summary>
+    public const string EmployeeIdClaim = "preferred_username";
+
+    /// <summary>The claim carrying the realm's own GUID for the user, which is not the Employee ID.</summary>
+    public const string SubjectClaim = "sub";
+
+    /// <summary>
+    /// The Employee ID every token carried before one could be asked for, and still the default.
+    /// </summary>
+    public const string DefaultEmployeeId = "100482";
+
     private static readonly RsaSecurityKey s_signingKey =
         new(RSA.Create(2048)) { KeyId = "test-realm-signing-key" };
 
@@ -99,18 +110,26 @@ public static class TestRealm
     /// <param name="role">The <c>store_role</c> claim value.</param>
     /// <param name="department">The <c>department</c> claim value.</param>
     /// <param name="jobFunction">The <c>job_function</c> claim value.</param>
+    /// <param name="employeeId">
+    /// The Employee ID the token is for, carried as <c>preferred_username</c>. Defaults to
+    /// <see cref="DefaultEmployeeId"/>, so a caller that does not care which employee is calling
+    /// asks for nothing. A test that needs two employees — one acting, one whose records must be
+    /// left alone — mints a token each.
+    /// </param>
     /// <returns>A signed, unexpired JWT.</returns>
     public static string ValidToken(
         string role = "DepartmentManager",
         string department = "Grocery",
-        string jobFunction = "Customer Support") =>
+        string jobFunction = "Customer Support",
+        string employeeId = DefaultEmployeeId) =>
         Token(
             issuer: Issuer,
             key: s_signingKey,
             expires: DateTime.UtcNow.AddMinutes(5),
             role: role,
             department: department,
-            jobFunction: jobFunction);
+            jobFunction: jobFunction,
+            employeeId: employeeId);
 
     /// <summary>A token this realm signed that has since run out. Everything else about it is good.</summary>
     /// <returns>A signed JWT whose lifetime has already ended.</returns>
@@ -133,7 +152,8 @@ public static class TestRealm
         DateTime expires,
         string role = "Associate",
         string department = "Grocery",
-        string jobFunction = "Register")
+        string jobFunction = "Register",
+        string employeeId = DefaultEmployeeId)
     {
         var descriptor = new SecurityTokenDescriptor
         {
@@ -143,8 +163,12 @@ public static class TestRealm
             Expires = expires,
             Claims = new Dictionary<string, object>
             {
-                ["sub"] = "100482",
-                ["preferred_username"] = "100482",
+                // Two different values, as the realm issues them — a GUID for `sub` and the
+                // Employee ID for `preferred_username`, matching the shape the sign-in resolver's
+                // own unit tests use. They were one hardcoded string until this story, which meant
+                // code reading the wrong one of the two passed every test by coincidence.
+                [SubjectClaim] = SubjectFor(employeeId),
+                [EmployeeIdClaim] = employeeId,
                 ["azp"] = "team-targe-store",
                 [RoleClaim] = role,
                 [DepartmentClaim] = department,
@@ -154,6 +178,16 @@ public static class TestRealm
         };
 
         return new JsonWebTokenHandler().CreateToken(descriptor);
+    }
+
+    // The realm's own identifier for a user is a GUID it assigned, never the username. Derived
+    // from the Employee ID rather than random so a token is reproducible and two employees get two
+    // subjects, and shaped as a UUID so nothing reading it can pass by looking like an ID.
+    private static string SubjectFor(string employeeId)
+    {
+        var tail = employeeId.PadLeft(12, '0');
+
+        return FormattableString.Invariant($"d1b0a4f2-0000-0000-0000-{tail[^12..]}");
     }
 
     // What the real ConfigurationManager does when the realm does not answer: it wraps the

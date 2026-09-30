@@ -1,0 +1,57 @@
+// The hero's status pill follows the header indicator's colours: the mockup's
+// grey off shift, Bootstrap's warning standing in for the mockup's amber on
+// break (Team-Targét.dc.html, Home/guest view).
+.home-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-status-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.home-status-pill-off {
+  background: var(--bs-secondary-bg);
+  color: #6c6c6c;
+
+  .home-status-pill-dot {
+    background: #9a9a9a;
+  }
+}
+
+.home-status-pill-break {
+  background: #fdf3e2;
+  color: #9a6400;
+
+  .home-status-pill-dot {
+    background: var(--bs-warning);
+  }
+}
+
+.home-hero-explanation {
+  max-width: 480px;
+}
+
+.home-shift {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.625rem;
+}
+
+.home-shift-accent {
+  flex: none;
+  width: 4px;
+  height: 36px;
+  border-radius: 99px;
+  background: var(--bs-teal);
+}

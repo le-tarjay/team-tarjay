@@ -1,0 +1,91 @@
+<div class="container py-4">
+  @if (shiftActionError(); as message) {
+    <div class="alert alert-danger" role="alert">
+      {{ message }}
+    </div>
+  }
+
+  @if (hero(); as hero) {
+    <section class="card home-hero mb-4" aria-labelledby="home-hero-greeting">
+      <div
+        class="card-body d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-4 p-4"
+      >
+        <div>
+          <span
+            class="home-status-pill"
+            [class.home-status-pill-off]="hero.status === 'OffShift'"
+            [class.home-status-pill-break]="hero.status === 'OnBreak'"
+          >
+            <span class="home-status-pill-dot" aria-hidden="true"></span>
+            {{ hero.statusLabel }}
+          </span>
+          <h1 id="home-hero-greeting" class="h2 fw-bold mt-3 mb-2">{{ hero.greeting }}</h1>
+          <p class="text-secondary mb-0 home-hero-explanation">{{ hero.explanation }}</p>
+        </div>
+
+        <div class="flex-shrink-0">
+          @if (hero.status === 'OffShift') {
+            <button
+              type="button"
+              class="btn btn-primary btn-lg"
+              [disabled]="isActing()"
+              (click)="clockIn()"
+            >
+              Clock in
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn-primary btn-lg"
+              [disabled]="isActing()"
+              (click)="endBreak()"
+            >
+              End break
+            </button>
+          }
+        </div>
+      </div>
+    </section>
+  }
+
+  <div class="row">
+    <div class="col-lg-6">
+      <section class="card" aria-labelledby="home-schedule-heading">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 id="home-schedule-heading" class="h5 fw-bold mb-0">My schedule</h2>
+            <a class="fw-semibold small" [routerLink]="myScheduleRoute">View all</a>
+          </div>
+
+          @if (errorMessage()) {
+            <div class="alert alert-danger mb-0" role="alert">
+              {{ errorMessage() }}
+            </div>
+          } @else if (isLoading()) {
+            <p class="text-secondary mb-0">Loading...</p>
+          } @else {
+            <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+              @for (shift of schedulePreview(); track shift.date) {
+                <li class="home-shift d-flex align-items-center gap-3">
+                  <span class="home-shift-accent" aria-hidden="true"></span>
+                  <div class="flex-grow-1">
+                    <div class="fw-semibold">
+                      {{ shift.dayLabel }} · {{ shift.date | date: 'MMM d' }}
+                    </div>
+                    <div class="small text-secondary">{{ shift.department }}</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="fw-bold text-nowrap">{{ shift.timeRange }}</div>
+                    <div class="small text-secondary">{{ shift.hours }}</div>
+                  </div>
+                </li>
+              } @empty {
+                <li class="text-secondary">No upcoming shifts scheduled.</li>
+              }
+            </ul>
+          }
+        </div>
+      </section>
+    </div>
+  </div>
+</div>

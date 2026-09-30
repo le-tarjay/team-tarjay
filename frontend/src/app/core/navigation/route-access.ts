@@ -15,6 +15,18 @@ import {
 export const DEFAULT_SIGNED_IN_ROUTE = '/sale';
 
 /**
+ * The screen for an employee who is signed in but off shift or on break. It
+ * explains the state and offers the one action that gets them working again.
+ */
+export const HOME_ROUTE = '/home';
+
+/**
+ * The full week view of the employee's own schedule. Home's schedule preview
+ * links here.
+ */
+export const MY_SCHEDULE_ROUTE = '/schedule';
+
+/**
  * Where a device goes when it has no session: turned away by the gate, signed
  * out deliberately from the account menu, or torn down because the session
  * ended elsewhere (`session-teardown.service.ts`). One constant for all three,

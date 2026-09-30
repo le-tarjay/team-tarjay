@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { vi } from 'vitest';
@@ -9,10 +10,13 @@ import { AuthService, SESSION_REFRESH_INTERVAL_MS } from './core/auth/auth.servi
 import { AUTHORIZATION_HEADER } from './core/auth/bearer-token.interceptor';
 import { LOGIN_ROUTE } from './core/navigation/route-access';
 import { SaleService } from './core/sale/sale.service';
-import { AUTH_SERVICE } from './core/tokens';
+import { ScheduleService } from './core/schedule/schedule.service';
+import { ShiftService } from './core/shift/shift.service';
+import { AUTH_SERVICE, SCHEDULE_SERVICE, SHIFT_SERVICE } from './core/tokens';
 import { MockAuthService } from './mocks/mock-auth.service';
 
 const SIGN_IN_URL = '/v1/employees/sign-in';
+const SHIFT_URL = '/v1/employees/me/shift';
 
 /** The default `SESSION_REFRESH_CONFIG` resolves to this. */
 const TOKEN_ENDPOINT = 'http://localhost:8080/realms/team-targe/protocol/openid-connect/token';
@@ -40,6 +44,18 @@ describe('appConfig', () => {
 
   it('resolves AUTH_SERVICE to the same instance as the root AuthService', () => {
     expect(TestBed.inject(AUTH_SERVICE)).toBe(TestBed.inject(AuthService));
+  });
+
+  /**
+   * The header, Home screen and nav gate all read the one held shift, so they
+   * must all reach the one root instance holding it.
+   */
+  it('resolves SHIFT_SERVICE to the same instance as the root ShiftService', () => {
+    expect(TestBed.inject(SHIFT_SERVICE)).toBe(TestBed.inject(ShiftService));
+  });
+
+  it('resolves SCHEDULE_SERVICE to the real ScheduleService', () => {
+    expect(TestBed.inject(SCHEDULE_SERVICE)).toBe(TestBed.inject(ScheduleService));
   });
 
   /**
@@ -165,6 +181,9 @@ describe('appConfig', () => {
       });
 
       TestBed.tick();
+      // The shift read every sign-in makes. On shift, so nothing moves the device.
+      httpMock.expectOne(SHIFT_URL).flush({ data: { status: 'OnShift', onDuty: true }, meta: {} });
+      TestBed.tick();
       expect(navigate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(SESSION_REFRESH_INTERVAL_MS);
@@ -184,5 +203,44 @@ describe('appConfig', () => {
 
       httpMock.verify();
     });
+  });
+
+  /**
+   * `OffDutyRedirectService` is a watcher nothing injects, like the teardown
+   * above. This drives the sign-in race through the app's own providers and
+   * route table: sign-in lands on Sale before the shift read returns, and the
+   * off-shift answer then moves the device to Home with nobody touching it.
+   */
+  it('moves an employee who lands on Sale to Home when the shift read says off shift', async () => {
+    const authService = TestBed.inject(AuthService);
+    const router = TestBed.inject(Router);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    authService.login({ employeeId: '100482', pin: '8321' }).subscribe();
+    httpMock.expectOne(SIGN_IN_URL).flush({
+      data: {
+        employeeId: '100482',
+        name: 'Avery Brooks',
+        role: 'DepartmentManager',
+        department: 'Grocery',
+        jobFunction: 'Customer Support',
+        access_token: ACCESS_TOKEN,
+        refresh_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMDA0ODIifQ.cmVmcmVzaA',
+      },
+      meta: {},
+    });
+    TestBed.tick();
+
+    await router.navigateByUrl('/sale');
+
+    expect(router.url).toBe('/sale');
+
+    httpMock.expectOne(SHIFT_URL).flush({ data: { status: 'OffShift', onDuty: false }, meta: {} });
+    TestBed.tick();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(router.url).toBe('/home');
+
+    httpMock.verify();
   });
 });

@@ -12,6 +12,8 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         builder.Services.AddContactStore();
+        builder.Services.AddAttendance();
+        builder.Services.AddSchedule();
         builder.Services.AddEmployeeIdentity(builder.Configuration);
         builder.Services.AddEmployeeTokenAuthentication(builder.Configuration);
         builder.Services.AddRequestValidation();

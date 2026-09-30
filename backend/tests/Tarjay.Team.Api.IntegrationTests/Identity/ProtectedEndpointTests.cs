@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -73,6 +74,88 @@ public class ProtectedEndpointTests
         Assert.Equal("StoreManager", factory.Principal.ClaimValue(TestRealm.RoleClaim));
         Assert.Equal("Front End", factory.Principal.ClaimValue(TestRealm.DepartmentClaim));
         Assert.Equal("Register", factory.Principal.ClaimValue(TestRealm.JobFunctionClaim));
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_WithAValidToken_ReadsTheCallingEmployeeFromPreferredUsername()
+    {
+        // Arrange
+        using var factory = new ApiWebApplicationFactory();
+        using var client = Authenticated(factory, TestRealm.ValidToken(employeeId: "10042"));
+
+        // Act
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
+
+        // Assert — the calling employee is the Employee ID, read through the configured
+        // NameClaimType, so an endpoint asks `User.Identity.Name` and does not pick a claim. It is
+        // emphatically not `sub`: that is the realm's GUID for the user, and attendance and
+        // schedule records are keyed on the Employee ID. The two are different values on this
+        // token, which is what makes this assertion mean anything.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("10042", factory.Principal.CallingEmployee);
+        Assert.NotEqual("10042", factory.Principal.ClaimValue(TestRealm.SubjectClaim));
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_WithTokensForTwoEmployees_ReadsEachCallerAsThemselves()
+    {
+        // Arrange — the same app, two employees, as two registers on one store's backend.
+        using var factory = new ApiWebApplicationFactory();
+        using var acting = Authenticated(factory, TestRealm.ValidToken(employeeId: "10042"));
+        using var other = Authenticated(factory, TestRealm.ValidToken(employeeId: "10043"));
+
+        // Act
+        using var actingResponse = await acting.GetAsync(TestRoutes.ProtectedUrl);
+        var actingEmployee = factory.Principal.CallingEmployee;
+
+        using var otherResponse = await other.GetAsync(TestRoutes.ProtectedUrl);
+        var otherEmployee = factory.Principal.CallingEmployee;
+
+        // Assert — each request is attributed to the employee whose token it carried. A reader
+        // that resolved to one constant would satisfy the single-employee case above and fail
+        // here, which is the point of asking twice.
+        Assert.Equal(HttpStatusCode.OK, actingResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, otherResponse.StatusCode);
+        Assert.Equal("10042", actingEmployee);
+        Assert.Equal("10043", otherEmployee);
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_WithAValidToken_LeavesTheRealmsClaimNamesAsTheyArrived()
+    {
+        // Arrange
+        using var factory = new ApiWebApplicationFactory();
+        using var client = Authenticated(factory, TestRealm.ValidToken(employeeId: "10042"));
+
+        // Act
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
+
+        // Assert — with inbound mapping off, `sub` stays `sub` instead of being rewritten to the
+        // ClaimTypes.NameIdentifier URI. That rewrite is a static framework dictionary this API
+        // does not control, and the point of turning it off is that nothing downstream has to know
+        // what is in it.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(factory.Principal.ClaimValue(TestRealm.SubjectClaim));
+        Assert.Null(factory.Principal.ClaimValue(ClaimTypes.NameIdentifier));
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_WithAValidToken_DoesNotGateOnTheStoreRoleClaim()
+    {
+        // Arrange — a role the realm issues, on an endpoint that gates on authentication only.
+        using var factory = new ApiWebApplicationFactory();
+        using var client = Authenticated(factory, TestRealm.ValidToken(role: "Associate"));
+
+        // Act
+        using var response = await client.GetAsync(TestRoutes.ProtectedUrl);
+
+        // Assert — RoleClaimType is left unset deliberately, so `store_role` is a claim like any
+        // other and drives no [Authorize(Roles = …)] decision. The claim is on the principal and
+        // readable; it simply is not a role yet. Wiring that up belongs to the epic with the first
+        // endpoint that gates on one.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Associate", factory.Principal.ClaimValue(TestRealm.RoleClaim));
+        Assert.False(factory.Principal.Principal!.IsInRole("Associate"));
     }
 
     [Fact]

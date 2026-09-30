@@ -4,7 +4,9 @@ import { authGuard } from './core/auth/auth.guard';
 import { AppShellComponent } from './core/layout/app-shell/app-shell';
 import { activeSaleGuard } from './core/sale/active-sale.guard';
 import { BuyersComponent } from './features/buyers/buyers';
+import { HomeComponent } from './features/home/home';
 import { LoginComponent } from './features/login/login';
+import { MyScheduleComponent } from './features/my-schedule/my-schedule';
 import { PaymentComponent } from './features/payment/payment';
 import { ProductsComponent } from './features/products/products';
 import { SaleBuilderComponent } from './features/sale-builder/sale-builder.component';
@@ -27,6 +29,14 @@ export const routes: Routes = [
      */
     canActivateChild: [authGuard],
     children: [
+      {
+        path: 'home',
+        component: HomeComponent,
+      },
+      {
+        path: 'schedule',
+        component: MyScheduleComponent,
+      },
       {
         path: 'sale',
         component: SaleBuilderComponent,

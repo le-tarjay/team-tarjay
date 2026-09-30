@@ -47,8 +47,15 @@ export class StubAuthService implements IAuthService {
     return of(SIGNED_IN_EMPLOYEE);
   }
 
-  signIn(): void {
-    this.employee.set(SIGNED_IN_EMPLOYEE);
+  /**
+   * A fresh object on every call, as `AuthService.login` produces: something
+   * that watches `currentEmployee` for sign-ins (`ShiftService`) sees the same
+   * employee signing back in as a new sign-in, exactly as it does in the app.
+   * Defaults to `SIGNED_IN_EMPLOYEE`; pass another to change hands at the
+   * terminal.
+   */
+  signIn(employee: Employee = SIGNED_IN_EMPLOYEE): void {
+    this.employee.set({ ...employee });
     this.ended.set(false);
   }
 

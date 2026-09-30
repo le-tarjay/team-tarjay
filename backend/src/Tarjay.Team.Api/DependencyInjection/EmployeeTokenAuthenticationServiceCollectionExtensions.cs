@@ -69,8 +69,32 @@ internal static class EmployeeTokenAuthenticationServiceCollectionExtensions
                 // has to be given an HTTPS realm.
                 options.RequireHttpsMetadata = !environment.IsDevelopment();
 
+                // Off, so a claim arrives on the principal under the name the realm put on the
+                // token. Left on, the inbound mapper rewrites `sub` to the long
+                // ClaimTypes.NameIdentifier URI and leaves `preferred_username` alone, so the two
+                // claims that identify an employee arrive under two unrelated naming schemes. The
+                // set of mappings is a static framework dictionary that can change under an
+                // upgrade; nothing here should depend on its contents.
+                options.MapInboundClaims = false;
+
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
+                    // Who is calling. The realm's users are the employee IDs themselves, so
+                    // `preferred_username` is the Employee ID and is what matches
+                    // EmployeeIdentity.EmployeeId — the same claim the sign-in resolver reads it
+                    // from. Naming it here makes User.Identity.Name that value, so an endpoint
+                    // reads its caller with one obvious call rather than hunting for a claim.
+                    //
+                    // `sub` is deliberately not this. It is the realm's own GUID for the user,
+                    // which the Admin API answers to and the store's attendance and schedule data
+                    // is not keyed on.
+                    NameClaimType = "preferred_username",
+
+                    // RoleClaimType is deliberately left unset. Setting it would make `store_role`
+                    // drive [Authorize(Roles = …)], and no endpoint gates on a role yet. That
+                    // belongs to the epic that introduces the first one, along with the tests that
+                    // prove which roles each endpoint admits.
+
                     // Signature and expiry, which is the whole of what this checks. Nothing here
                     // asks Keycloak whether the session behind the token is still alive: a
                     // terminated session is discovered by the refresh that follows failing, not
