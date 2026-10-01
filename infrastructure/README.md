@@ -63,7 +63,8 @@ That URL is the right thing for a test harness to poll, rather than a fixed slee
 
 Employee ID is the username, PIN is the password. One employee per role, plus a
 Customer Support case, so every branch of the frontend's role-based navigation is
-reachable with a real credential:
+reachable with a real credential. Two more work in Electronics, a second department, so
+manager approval can be refused for a Department Manager outside their own department:
 
 | Employee ID | PIN | Name | Role | Department | Job function |
 |---|---|---|---|---|---|
@@ -72,10 +73,34 @@ reachable with a real credential:
 | `10043` | `6639` | Alex Mercer | StoreManager | Store Operations | Store Management |
 | `10044` | `7741` | Priya Raman | ReceivingAssociate | Receiving | Receiving |
 | `10045` | `8852` | Chris Bell | Associate | Grocery | Customer Support |
+| `10046` | `9963` | Morgan Ellis | DepartmentManager | Electronics | Stocking |
+| `10047` | `3196` | Jamie Ortiz | Associate | Electronics | Stocking |
 
 A wrong PIN is rejected by Keycloak, which is the case the API turns into its own
-invalid-credentials response. Brute-force protection is deliberately off, so repeating
-that test does not lock an employee out and break the next run.
+invalid-credentials response.
+
+### Lockout after repeated wrong PINs
+
+Brute-force protection is on. It is the only limit on guessing a PIN: manager approval
+checks a manager's PIN from any register, and nothing in the API rate-limits that. The
+settings are Keycloak's defaults, written out in the export:
+
+- **30 wrong PINs** for one Employee ID lock that employee out for 60 seconds. Each
+  further lockout adds 60 seconds, up to 15 minutes. The failure count resets after 12
+  hours, or on a successful sign-in.
+- **Two wrong PINs less than a second apart** lock the employee out for 60 seconds
+  straight away. A test that submits wrong PINs in a tight loop trips this.
+- **While locked, the correct PIN is refused too.** Keycloak answers exactly as it does
+  for a wrong PIN, `401 invalid_grant` "Invalid user credentials", so the API refuses it
+  the same way. Only Keycloak's event log says `user_temporarily_disabled`.
+- **The lockout covers the employee's own sign-in as well as their approvals.** Anyone at
+  a register can lock a manager out for a short time by entering that manager's ID with
+  wrong PINs. This is accepted for this build.
+
+The lockout is per employee, so other employees are unaffected. It lives in Keycloak's
+store, so `docker compose down` clears it. To clear it on a running stack, use the admin
+console: *Users* → the employee → *Unlock*, or `DELETE
+/admin/realms/team-targe/attack-detection/brute-force/users/{id}`.
 
 ### The admin client, for ending an employee's other sessions
 
@@ -146,7 +171,8 @@ on every run.
 The practical consequence: **do not configure this realm through the admin console.**
 Anything clicked there is gone at the next teardown. Change the export and restart.
 
-Four settings in it are load-bearing and easy to lose:
+The settings below are load-bearing and easy to lose. So is `bruteForceProtected: true`,
+covered under *Lockout after repeated wrong PINs*.
 
 - **The three custom claims each need a protocol mapper with *Add to userinfo* on.** The
   API reads identity from `/userinfo`, and a user-attribute mapper does not reach

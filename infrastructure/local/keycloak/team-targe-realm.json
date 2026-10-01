@@ -11,8 +11,14 @@
   "verifyEmail": false,
   "editUsernameAllowed": false,
   "rememberMe": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "permanentLockout": false,
+  "failureFactor": 30,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
@@ -278,6 +284,56 @@
         {
           "type": "password",
           "value": "8852",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10046",
+      "enabled": true,
+      "firstName": "Morgan",
+      "lastName": "Ellis",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "DepartmentManager"
+        ],
+        "department": [
+          "Electronics"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "9963",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10047",
+      "enabled": true,
+      "firstName": "Jamie",
+      "lastName": "Ortiz",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "Associate"
+        ],
+        "department": [
+          "Electronics"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "3196",
           "temporary": false
         }
       ]
