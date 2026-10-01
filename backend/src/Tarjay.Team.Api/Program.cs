@@ -14,6 +14,7 @@ public class Program
         builder.Services.AddContactStore();
         builder.Services.AddAttendance();
         builder.Services.AddApprovalEligibility();
+        builder.Services.AddManagerApprovalCheck();
         builder.Services.AddSchedule();
         builder.Services.AddEmployeeIdentity(builder.Configuration);
         builder.Services.AddEmployeeTokenAuthentication(builder.Configuration);

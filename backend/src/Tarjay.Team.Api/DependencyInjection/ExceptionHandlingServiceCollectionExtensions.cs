@@ -26,6 +26,7 @@ internal static class ExceptionHandlingServiceCollectionExtensions
 
         services.AddExceptionHandler<IdentityExceptionHandler>();
         services.AddExceptionHandler<AttendanceExceptionHandler>();
+        services.AddExceptionHandler<ApprovalExceptionHandler>();
         services.AddExceptionHandler<FallbackExceptionHandler>();
 
         return services;
