@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
 
+import { IApprovalService } from './approval/approval.service';
 import { IAuthService } from './auth/auth.service';
 import { IBuyerService } from './buyer/buyer.service';
 import { IPaymentService } from './payment/payment.service';
@@ -8,6 +9,7 @@ import { ISalesService } from './sales/sales.service';
 import { IScheduleService } from './schedule/schedule.service';
 import { IShiftService } from './shift/shift.service';
 
+export const APPROVAL_SERVICE = new InjectionToken<IApprovalService>('APPROVAL_SERVICE');
 export const AUTH_SERVICE = new InjectionToken<IAuthService>('AUTH_SERVICE');
 export const BUYER_SERVICE = new InjectionToken<IBuyerService>('BUYER_SERVICE');
 export const PAYMENT_SERVICE = new InjectionToken<IPaymentService>('PAYMENT_SERVICE');
