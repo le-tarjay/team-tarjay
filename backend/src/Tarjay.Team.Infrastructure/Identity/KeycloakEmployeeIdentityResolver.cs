@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -180,37 +178,28 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
         using var payload = await ReadJsonAsync(response, employeeId, cancellationToken);
         var claims = payload.RootElement;
 
-        var department = ReadClaim(claims, _options.DepartmentClaim);
-        if (string.IsNullOrWhiteSpace(department))
+        // The tier, department, and job function are read the same way the manager approval check
+        // reads them. Sign-in is stricter than that shared read: it refuses an identity with no
+        // department or job function rather than accepting an empty one.
+        var authority = KeycloakIdentityClaims.ReadAuthority(
+            claims,
+            _options,
+            detail => Incomplete(detail, employeeId));
+
+        if (authority.Department.Length == 0)
         {
             throw Incomplete(FormattableString.Invariant($"no {_options.DepartmentClaim} claim was supplied"), employeeId);
         }
 
-        var jobFunction = ReadClaim(claims, _options.JobFunctionClaim);
-        if (string.IsNullOrWhiteSpace(jobFunction))
+        if (authority.JobFunction.Length == 0)
         {
             throw Incomplete(FormattableString.Invariant($"no {_options.JobFunctionClaim} claim was supplied"), employeeId);
-        }
-
-        var roleClaim = ReadClaim(claims, _options.RoleClaim);
-        if (string.IsNullOrWhiteSpace(roleClaim))
-        {
-            throw Incomplete(FormattableString.Invariant($"no {_options.RoleClaim} claim was supplied"), employeeId);
-        }
-
-        if (!TryParseRole(roleClaim, out var role))
-        {
-            // An unrecognized tier is not defaulted to Associate. Guessing downward would hand
-            // someone the wrong authority quietly, which is worse than refusing the sign-in.
-            throw Incomplete(
-                FormattableString.Invariant($"the {_options.RoleClaim} claim was \"{roleClaim}\", which is not one of the four roles the store recognizes"),
-                employeeId);
         }
 
         // The realm's own id for this employee, which is what the Admin API answers to — the
         // Employee ID they typed is a username, and asking the Admin API about a username means a
         // search that could match more than one person.
-        var subject = ReadClaim(claims, "sub");
+        var subject = KeycloakIdentityClaims.ReadClaim(claims, "sub");
         if (string.IsNullOrWhiteSpace(subject))
         {
             throw Incomplete("no sub claim was supplied", employeeId);
@@ -218,11 +207,13 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
 
         var identity = new EmployeeIdentity
         {
-            EmployeeId = ReadClaim(claims, "preferred_username") ?? employeeId,
-            Name = ReadClaim(claims, "name") ?? ReadClaim(claims, "preferred_username") ?? employeeId,
-            Role = role,
-            Department = department,
-            JobFunction = jobFunction,
+            EmployeeId = KeycloakIdentityClaims.ReadClaim(claims, "preferred_username") ?? employeeId,
+            Name = KeycloakIdentityClaims.ReadClaim(claims, "name")
+                ?? KeycloakIdentityClaims.ReadClaim(claims, "preferred_username")
+                ?? employeeId,
+            Role = authority.Role,
+            Department = authority.Department,
+            JobFunction = authority.JobFunction,
         };
 
         return (identity, subject);
@@ -322,57 +313,6 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
         }
 
         return property.GetString();
-    }
-
-    private static string? ReadClaim(JsonElement claims, string claimName)
-    {
-        if (claims.ValueKind != JsonValueKind.Object
-            || !claims.TryGetProperty(claimName, out var claim))
-        {
-            return null;
-        }
-
-        return claim.ValueKind switch
-        {
-            JsonValueKind.String => claim.GetString(),
-
-            // Keycloak renders a multi-valued user attribute as an array even when a single value
-            // is configured, so a one-element array is read as that value rather than refused.
-            JsonValueKind.Array => claim.EnumerateArray()
-                .Where(element => element.ValueKind == JsonValueKind.String)
-                .Select(element => element.GetString())
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
-
-            _ => null,
-        };
-    }
-
-    private static bool TryParseRole(string roleClaim, out EmployeeRole role)
-    {
-        // Compared with separators and casing stripped, so "department-manager",
-        // "department_manager", and "DepartmentManager" all resolve to the same tier. The realm's
-        // choice of spelling is not something this store should be brittle about.
-        var normalized = new string(roleClaim.Where(char.IsLetterOrDigit).ToArray())
-            .ToLower(CultureInfo.InvariantCulture);
-
-        switch (normalized)
-        {
-            case "associate":
-                role = EmployeeRole.Associate;
-                return true;
-            case "departmentmanager":
-                role = EmployeeRole.DepartmentManager;
-                return true;
-            case "storemanager":
-                role = EmployeeRole.StoreManager;
-                return true;
-            case "receivingassociate":
-                role = EmployeeRole.ReceivingAssociate;
-                return true;
-            default:
-                role = default;
-                return false;
-        }
     }
 
     /// <summary>

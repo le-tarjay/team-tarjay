@@ -60,6 +60,31 @@ public class KeycloakEmployeeIdentityResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WithValidCredentials_ResolvesTheSameAuthorityTheSharedReadReturns()
+    {
+        // Arrange
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var resolver = CreateResolver(handler, out _);
+
+        using var claims = System.Text.Json.JsonDocument.Parse(UserInfoResponse);
+        var shared = KeycloakIdentityClaims.ReadAuthority(
+            claims.RootElement,
+            new KeycloakOptions(),
+            detail => new EmployeeIdentityIncompleteException(detail));
+
+        // Act
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(shared.Role, session.Identity.Role);
+        Assert.Equal(shared.Department, session.Identity.Department);
+        Assert.Equal(shared.JobFunction, session.Identity.JobFunction);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WithValidCredentials_KeepsBothTokensTheGrantIssued()
     {
         // Arrange
