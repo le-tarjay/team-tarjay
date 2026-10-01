@@ -18,9 +18,15 @@ API, plus the key names `docker-compose.yml` passes the API. A drift between the
 there and the secret here is a real failure, and tests/test_local_stack.py asserts the
 two match.
 
-What this cannot cover: whether Keycloak actually accepts the export. That needs a
-running container. See the PR and LET-119's completion report -- and, for the admin
-client's token and Admin API call specifically, LET-129's.
+LET-149 adds a second block chosen here rather than dictated by backend code: the
+Electronics employees, which exist so manager approval's cross-department refusal has
+someone to refuse, and the brute-force lockout settings, which are Keycloak 26.0's own
+defaults written out so the lockout window is readable in the export.
+
+What this cannot cover: whether Keycloak actually accepts the export, or whether the
+lockout behaves as configured. That needs a running container. See the PR and LET-119's
+completion report -- for the admin client's token and Admin API call specifically,
+LET-129's, and for the second department and the lockout, LET-149's.
 """
 
 import json
@@ -104,6 +110,41 @@ SEEDED_EMPLOYEES: dict[str, dict[str, str]] = {
         "department": "Grocery",
         "job_function": "Customer Support",
     },
+    # LET-149: a second department's manager and associate, so a Department Manager can be
+    # refused for an approval outside their own department.
+    "10046": {
+        "pin": "9963",
+        "firstName": "Morgan",
+        "lastName": "Ellis",
+        "store_role": "DepartmentManager",
+        "department": "Electronics",
+        "job_function": "Stocking",
+    },
+    "10047": {
+        "pin": "3196",
+        "firstName": "Jamie",
+        "lastName": "Ortiz",
+        "store_role": "Associate",
+        "department": "Electronics",
+        "job_function": "Stocking",
+    },
+}
+
+# The department every LET-119 employee below Store Manager works in. Manager approval is
+# scoped by department, so the realm needs a manager and an associate somewhere else.
+FIRST_DEPARTMENT = "Grocery"
+
+# Keycloak 26.0's own brute-force defaults, written out in the export (LET-149). The story
+# asks for the setting on and nothing more, so these must stay Keycloak's defaults: 30
+# failures lock a user out for 60 seconds, growing per lockout to at most 15 minutes, and
+# two failures less than a second apart lock them out for 60 seconds straight away.
+BRUTE_FORCE_SETTINGS: dict[str, int] = {
+    "failureFactor": 30,
+    "waitIncrementSeconds": 60,
+    "maxFailureWaitSeconds": 900,
+    "maxDeltaTimeSeconds": 43200,
+    "quickLoginCheckMilliSeconds": 1000,
+    "minimumQuickLoginWaitSeconds": 60,
 }
 
 
@@ -151,8 +192,8 @@ def users_by_username(realm: dict[str, Any]) -> dict[str, dict[str, Any]]:
     assertion below proves. Every test in TestSeededEmployees is about an employee: a
     PIN, three custom claims, a role from the closed set. A service account has none of
     those, so including it would not test it -- it would raise KeyError in tests that are
-    not about it. `test_exactly_the_five_seeded_employees_are_present` still pins the
-    employee set at exactly five, and the service account is asserted exactly, and
+    not about it. `test_exactly_the_seeded_employees_are_present` still pins the
+    employee set exactly, and the service account is asserted exactly, and
     separately, in TestAdminServiceAccount.
     """
     users = cast(list[dict[str, Any]], realm["users"])
@@ -187,11 +228,23 @@ class TestRealm:
         assert "upperCase" not in policy
         assert "specialChars" not in policy
 
-    def test_brute_force_protection_is_off(self, realm: dict[str, Any]) -> None:
-        # A suite asserting the wrong-PIN rejection runs it every pass. With protection
-        # on, the seeded employee is temporarily disabled and the next run's *valid*
-        # sign-in fails for a reason nothing in the test explains.
-        assert realm["bruteForceProtected"] is False
+    def test_brute_force_protection_is_on(self, realm: dict[str, Any]) -> None:
+        # LET-149, reversing LET-119's deliberate `false`. Manager approval checks a PIN
+        # typed at any register, and Keycloak's per-user lockout is the only limit on
+        # guessing it: no application-level limiter exists. The lockout covers the
+        # employee's own sign-in too, which the story accepts.
+        assert realm["bruteForceProtected"] is True
+
+    def test_the_lockout_is_temporary(self, realm: dict[str, Any]) -> None:
+        # A permanent lockout would disable a seeded employee until someone re-enables
+        # them by hand, and the next valid sign-in would fail for no visible reason.
+        assert realm["permanentLockout"] is False
+
+    @pytest.mark.parametrize("setting", sorted(BRUTE_FORCE_SETTINGS))
+    def test_the_lockout_uses_keycloaks_defaults(self, realm: dict[str, Any], setting: str) -> None:
+        # The configured lockout window the acceptance criteria refer to. Pinned so that
+        # tuning it is a visible edit here rather than a drift nobody decided.
+        assert realm[setting] == BRUTE_FORCE_SETTINGS[setting]
 
     def test_employees_cannot_self_register_or_sign_in_by_email(self, realm: dict[str, Any]) -> None:
         # Employees are seeded and have no email address; Employee ID + PIN is the only path.
@@ -362,8 +415,8 @@ class TestAdminServiceAccount:
 
     def test_no_employee_holds_an_administrative_role(self, users_by_username: dict[str, dict[str, Any]]) -> None:
         # The other half of the containment: the seeded employees are the accounts a
-        # person can actually sign into, with a four-digit PIN and no brute-force
-        # protection. None of them may carry a role that reaches the Admin API.
+        # person can actually sign into, with a four-digit PIN that the brute-force lockout
+        # only slows down. None of them may carry a role that reaches the Admin API.
         for username, user in users_by_username.items():
             assert "clientRoles" not in user, f"employee {username} holds client roles"
             assert "realmRoles" not in user, f"employee {username} holds realm roles"
@@ -398,8 +451,31 @@ class TestUserProfile:
 
 
 class TestSeededEmployees:
-    def test_exactly_the_five_seeded_employees_are_present(self, users_by_username: dict[str, dict[str, Any]]) -> None:
+    def test_exactly_the_seeded_employees_are_present(self, users_by_username: dict[str, dict[str, Any]]) -> None:
+        # LET-119's five, plus LET-149's two in a second department.
         assert set(users_by_username) == set(SEEDED_EMPLOYEES)
+        assert len(users_by_username) == 7
+
+    @pytest.mark.parametrize("role", ["DepartmentManager", "Associate"])
+    def test_a_second_department_has_a_manager_and_an_associate(
+        self, users_by_username: dict[str, dict[str, Any]], role: str
+    ) -> None:
+        # LET-149. Manager approval refuses a Department Manager outside their own
+        # department, which needs a manager and a requester who are not in Grocery.
+        # Store Operations and Receiving do not count: neither has a Department Manager.
+        departments_with_a_manager = {
+            cast(str, u["attributes"]["department"][0])
+            for u in users_by_username.values()
+            if u["attributes"]["store_role"] == ["DepartmentManager"]
+        } - {FIRST_DEPARTMENT}
+        assert departments_with_a_manager, "no Department Manager outside Grocery"
+        for department in departments_with_a_manager:
+            in_department = [
+                u
+                for u in users_by_username.values()
+                if u["attributes"]["department"] == [department] and u["attributes"]["store_role"] == [role]
+            ]
+            assert in_department, f"{department} has a Department Manager but no {role}"
 
     def test_every_role_in_the_closed_set_is_reachable(self, users_by_username: dict[str, dict[str, Any]]) -> None:
         # The point of the seed: each of the four roles signs in with a real credential,
