@@ -20,6 +20,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Tarjay.Team.Application\Tarjay.Team.Application.csproj" />
       <ProjectReference Include="..\Tarjay.Team.Domain\Tarjay.Team.Domain.csproj" />
       <ProjectReference Include="..\Tarjay.Team.Infrastructure\Tarjay.Team.Infrastructure.csproj" />
     </ItemGroup>
