@@ -180,7 +180,9 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
 
         // The tier, department, and job function are read the same way the manager approval check
         // reads them. Sign-in is stricter than that shared read: it refuses an identity with no
-        // department or job function rather than accepting an empty one.
+        // department or job function rather than accepting an empty one. The shared read checks the
+        // tier first, so an identity missing both the tier and the department is refused for the
+        // tier.
         var authority = KeycloakIdentityClaims.ReadAuthority(
             claims,
             _options,

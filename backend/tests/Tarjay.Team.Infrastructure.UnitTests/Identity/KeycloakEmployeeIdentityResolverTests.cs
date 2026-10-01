@@ -41,10 +41,20 @@ public class KeycloakEmployeeIdentityResolverTests
     [Fact]
     public async Task ResolveAsync_WithValidCredentials_ResolvesRoleDepartmentAndJobFunction()
     {
-        // Arrange
+        // Arrange — a department and job function no other fixture in this class uses, so a
+        // resolver that hardcoded either one could not pass here by coincidence.
         var handler = new StubHttpMessageHandler()
             .RespondWith(HttpStatusCode.OK, TokenResponse)
-            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+            .RespondWith(HttpStatusCode.OK, """
+                {
+                  "sub": "d1b0a4f2-0000-0000-0000-000000000001",
+                  "preferred_username": "100482",
+                  "name": "Avery Brooks",
+                  "store_role": "department-manager",
+                  "department": "Pharmacy",
+                  "job_function": "Pharmacy Technician"
+                }
+                """);
 
         var resolver = CreateResolver(handler, out _);
 
@@ -55,8 +65,8 @@ public class KeycloakEmployeeIdentityResolverTests
         Assert.Equal("100482", session.Identity.EmployeeId);
         Assert.Equal("Avery Brooks", session.Identity.Name);
         Assert.Equal(EmployeeRole.DepartmentManager, session.Identity.Role);
-        Assert.Equal("Grocery", session.Identity.Department);
-        Assert.Equal("Customer Support", session.Identity.JobFunction);
+        Assert.Equal("Pharmacy", session.Identity.Department);
+        Assert.Equal("Pharmacy Technician", session.Identity.JobFunction);
     }
 
     [Fact]
@@ -525,6 +535,27 @@ public class KeycloakEmployeeIdentityResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenTheProviderOmitsBothTheTierAndTheDepartment_NamesTheTier()
+    {
+        // Arrange — the shared read refuses a missing tier before sign-in checks the department,
+        // so with both missing the failure names the tier.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoWithout("store_role", "department"));
+
+        var resolver = CreateResolver(handler, out var logger);
+
+        // Act
+        var failure = await Assert.ThrowsAsync<EmployeeIdentityIncompleteException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+
+        // Assert — the exception and the log line both name the tier, not the department.
+        Assert.Contains("store_role", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("department", failure.Message, StringComparison.Ordinal);
+        Assert.True(logger.ContainsText("store_role"), $"The log did not name the tier: {string.Join(" | ", logger.Lines)}");
+    }
+
+    [Fact]
     public async Task ResolveAsync_WithARoleTheStoreDoesNotRecognize_ThrowsIdentityIncomplete()
     {
         // Arrange
@@ -769,7 +800,7 @@ public class KeycloakEmployeeIdentityResolverTests
         }
         """;
 
-    private static string UserInfoWithout(string omittedClaim)
+    private static string UserInfoWithout(params string[] omittedClaims)
     {
         var claims = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -778,7 +809,10 @@ public class KeycloakEmployeeIdentityResolverTests
             ["job_function"] = "Register",
         };
 
-        claims.Remove(omittedClaim);
+        foreach (var omittedClaim in omittedClaims)
+        {
+            claims.Remove(omittedClaim);
+        }
 
         var rendered = string.Join(
             ",\n  ",
