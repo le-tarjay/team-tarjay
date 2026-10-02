@@ -15,6 +15,7 @@ import { OffDutyRedirectService } from './core/navigation/off-duty-redirect.serv
 import { ScheduleService } from './core/schedule/schedule.service';
 import { ShiftService } from './core/shift/shift.service';
 import {
+  APPROVAL_SERVICE,
   AUTH_SERVICE,
   BUYER_SERVICE,
   PAYMENT_SERVICE,
@@ -23,6 +24,7 @@ import {
   SCHEDULE_SERVICE,
   SHIFT_SERVICE,
 } from './core/tokens';
+import { MockApprovalService } from './mocks/mock-approval.service';
 import { MockBuyerService } from './mocks/mock-buyer.service';
 import { MockPaymentService } from './mocks/mock-payment.service';
 import { MockProductService } from './mocks/mock-product.service';
@@ -47,6 +49,12 @@ export const appConfig: ApplicationConfig = {
       // second, silently divergent copy of it.
       provide: AUTH_SERVICE,
       useExisting: AuthService,
+    },
+    {
+      // Mock until the approval modal lands. The check endpoint is real, but
+      // nothing in the app can reach it until the modal does.
+      provide: APPROVAL_SERVICE,
+      useClass: MockApprovalService,
     },
     {
       provide: BUYER_SERVICE,
