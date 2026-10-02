@@ -11,8 +11,14 @@
   "verifyEmail": false,
   "editUsernameAllowed": false,
   "rememberMe": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "permanentLockout": false,
+  "failureFactor": 30,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
@@ -138,6 +144,22 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "team-targe-admin",
+      "name": "Le Targét store administration",
+      "description": "Service account the API authenticates as to terminate an employee's other sessions at sign-in. No employee ever signs in with this client.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "local-development-only-not-a-real-secret",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [],
+      "webOrigins": []
     }
   ],
   "users": [
@@ -265,6 +287,67 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "10046",
+      "enabled": true,
+      "firstName": "Morgan",
+      "lastName": "Ellis",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "DepartmentManager"
+        ],
+        "department": [
+          "Electronics"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "9963",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "10047",
+      "enabled": true,
+      "firstName": "Jamie",
+      "lastName": "Ortiz",
+      "requiredActions": [],
+      "attributes": {
+        "store_role": [
+          "Associate"
+        ],
+        "department": [
+          "Electronics"
+        ],
+        "job_function": [
+          "Stocking"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "3196",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "service-account-team-targe-admin",
+      "enabled": true,
+      "serviceAccountClientId": "team-targe-admin",
+      "requiredActions": [],
+      "clientRoles": {
+        "realm-management": [
+          "manage-users"
+        ]
+      }
     }
   ],
   "components": {

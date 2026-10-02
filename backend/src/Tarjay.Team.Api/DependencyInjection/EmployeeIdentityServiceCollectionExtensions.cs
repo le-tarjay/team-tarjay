@@ -14,7 +14,8 @@ internal static class EmployeeIdentityServiceCollectionExtensions
 {
     /// <summary>
     /// Binds the <c>Identity</c> configuration section and registers the Keycloak-backed resolver
-    /// behind <see cref="IEmployeeIdentityResolver"/>.
+    /// behind <see cref="IEmployeeIdentityResolver"/> and the Keycloak-backed approver check behind
+    /// <see cref="IApproverCredentialCheck"/>.
     /// </summary>
     /// <param name="services">The service collection to add to.</param>
     /// <param name="configuration">Configuration to bind the identity options from.</param>
@@ -28,9 +29,28 @@ internal static class EmployeeIdentityServiceCollectionExtensions
 
         services.Configure<KeycloakOptions>(configuration.GetSection(KeycloakOptions.SectionName));
 
+        // Its own client, not the resolver's: this one talks to the Admin API as the store's
+        // service account, and sharing a client with the employee-facing calls would put two
+        // unrelated credentials on one connection's worth of configuration.
+        services.AddHttpClient<IKeycloakSessionAdministrator, KeycloakSessionAdministrator>(
+            static (serviceProvider, httpClient) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                httpClient.Timeout = options.Timeout;
+            });
+
         // Registered against the interface, and with DI owning the HttpClient's lifetime rather
         // than a hand-rolled singleton holding one forever.
         services.AddHttpClient<IEmployeeIdentityResolver, KeycloakEmployeeIdentityResolver>(
+            static (serviceProvider, httpClient) =>
+            {
+                var options = serviceProvider.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                httpClient.Timeout = options.Timeout;
+            });
+
+        // The approver check talks to the same realm as sign-in and nothing else. It holds no
+        // session administrator, so it has no way to end a manager's other sessions.
+        services.AddHttpClient<IApproverCredentialCheck, KeycloakApproverCredentialCheck>(
             static (serviceProvider, httpClient) =>
             {
                 var options = serviceProvider.GetRequiredService<IOptions<KeycloakOptions>>().Value;

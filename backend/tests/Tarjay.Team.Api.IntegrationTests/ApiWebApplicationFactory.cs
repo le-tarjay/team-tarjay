@@ -1,11 +1,9 @@
 using System;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Tarjay.Team.Api.IntegrationTests;
 
@@ -15,6 +13,9 @@ namespace Tarjay.Team.Api.IntegrationTests;
 // run time looking for a deps file the app never produced.
 public class ApiWebApplicationFactory : WebApplicationFactory<Program>
 {
+    /// <summary>The principal the app authenticated on the most recent request.</summary>
+    public PrincipalCapture Principal { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -23,15 +24,15 @@ public class ApiWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
-            // Pin OIDC discovery to a static, empty document so no test ever reaches the network,
+            // Pin OIDC discovery to a static document so no test ever reaches the network,
             // regardless of the (unreachable, placeholder) Identity:Authority in appsettings.
-            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
-            {
-                var emptyConfiguration = new OpenIdConnectConfiguration();
-                options.Configuration = emptyConfiguration;
-                options.ConfigurationManager =
-                    new StaticConfigurationManager<OpenIdConnectConfiguration>(emptyConfiguration);
-            });
+            // The document is no longer empty: the app now validates bearer tokens for real, so
+            // it has to publish a key those tokens can be signed with. Everything else about the
+            // app's JWT bearer configuration is left exactly as Program.cs registered it — see
+            // TestRealm, which owns the key and mints the tokens.
+            TestRealm.PinDiscoveryToTestRealm(services);
+
+            services.AddSingleton<IClaimsTransformation>(Principal);
         });
     }
 }

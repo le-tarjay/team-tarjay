@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <RootNamespace>Tarjay.Team.Application</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- The same version Tarjay.Team.Infrastructure already references. -->
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Tarjay.Team.Domain\Tarjay.Team.Domain.csproj" />
+    </ItemGroup>
+
+</Project>

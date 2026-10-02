@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -13,9 +14,17 @@ public class KeycloakEmployeeIdentityResolverTests
 {
     private const string EmployeeId = "100482";
     private const string Pin = "8321";
+    private const string Subject = "d1b0a4f2-0000-0000-0000-000000000001";
+    private const string SessionState = "9f3c77b1-2222-2222-2222-222222222222";
 
     private const string TokenResponse = """
-        { "access_token": "an-access-token", "expires_in": 300, "token_type": "Bearer" }
+        {
+          "access_token": "an-access-token",
+          "refresh_token": "a-refresh-token",
+          "session_state": "9f3c77b1-2222-2222-2222-222222222222",
+          "expires_in": 300,
+          "token_type": "Bearer"
+        }
         """;
 
     private const string UserInfoResponse = """
@@ -32,6 +41,62 @@ public class KeycloakEmployeeIdentityResolverTests
     [Fact]
     public async Task ResolveAsync_WithValidCredentials_ResolvesRoleDepartmentAndJobFunction()
     {
+        // Arrange — a department and job function no other fixture in this class uses, so a
+        // resolver that hardcoded either one could not pass here by coincidence.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, """
+                {
+                  "sub": "d1b0a4f2-0000-0000-0000-000000000001",
+                  "preferred_username": "100482",
+                  "name": "Avery Brooks",
+                  "store_role": "department-manager",
+                  "department": "Pharmacy",
+                  "job_function": "Pharmacy Technician"
+                }
+                """);
+
+        var resolver = CreateResolver(handler, out _);
+
+        // Act
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert
+        Assert.Equal("100482", session.Identity.EmployeeId);
+        Assert.Equal("Avery Brooks", session.Identity.Name);
+        Assert.Equal(EmployeeRole.DepartmentManager, session.Identity.Role);
+        Assert.Equal("Pharmacy", session.Identity.Department);
+        Assert.Equal("Pharmacy Technician", session.Identity.JobFunction);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithValidCredentials_ResolvesTheSameAuthorityTheSharedReadReturns()
+    {
+        // Arrange
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var resolver = CreateResolver(handler, out _);
+
+        using var claims = System.Text.Json.JsonDocument.Parse(UserInfoResponse);
+        var shared = KeycloakIdentityClaims.ReadAuthority(
+            claims.RootElement,
+            new KeycloakOptions(),
+            detail => new EmployeeIdentityIncompleteException(detail));
+
+        // Act
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(shared.Role, session.Identity.Role);
+        Assert.Equal(shared.Department, session.Identity.Department);
+        Assert.Equal(shared.JobFunction, session.Identity.JobFunction);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithValidCredentials_KeepsBothTokensTheGrantIssued()
+    {
         // Arrange
         var handler = new StubHttpMessageHandler()
             .RespondWith(HttpStatusCode.OK, TokenResponse)
@@ -40,14 +105,13 @@ public class KeycloakEmployeeIdentityResolverTests
         var resolver = CreateResolver(handler, out _);
 
         // Act
-        var identity = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
 
-        // Assert
-        Assert.Equal("100482", identity.EmployeeId);
-        Assert.Equal("Avery Brooks", identity.Name);
-        Assert.Equal(EmployeeRole.DepartmentManager, identity.Role);
-        Assert.Equal("Grocery", identity.Department);
-        Assert.Equal("Customer Support", identity.JobFunction);
+        // Assert — both are passed through exactly as Keycloak issued them. The refresh token in
+        // particular used to be read and dropped on the floor, which left the device with no way
+        // to ever find out its session had ended.
+        Assert.Equal("an-access-token", session.AccessToken);
+        Assert.Equal("a-refresh-token", session.RefreshToken);
     }
 
     [Fact]
@@ -104,10 +168,188 @@ public class KeycloakEmployeeIdentityResolverTests
         var resolver = CreateResolver(handler, out _);
 
         // Act
-        var identity = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
 
         // Assert
-        Assert.Equal(expected, identity.Role);
+        Assert.Equal(expected, session.Identity.Role);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithValidCredentials_EndsTheEmployeesOtherSessionsBeforeReturning()
+    {
+        // Arrange
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var administrator = new StubSessionAdministrator();
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert — the employee is named by the realm's own id, and the session just created is
+        // named as the one to keep, so "their other sessions" means exactly that.
+        var call = Assert.Single(administrator.Calls);
+        Assert.Equal(Subject, call.UserId);
+        Assert.Equal(SessionState, call.CurrentSessionId);
+        Assert.Equal("an-access-token", session.AccessToken);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithValidCredentials_WaitsForTheTerminationRatherThanAnsweringOverIt()
+    {
+        // Arrange — a termination held open, so "before responding" is something the test can
+        // actually see rather than infer.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var gate = new TaskCompletionSource();
+        var administrator = new StubSessionAdministrator { Gate = gate.Task };
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act
+        var resolving = resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert — sign-in is still outstanding while the other sessions are still live. A caller
+        // that got its tokens here would be holding them alongside the session they were meant to
+        // replace.
+        Assert.False(resolving.IsCompleted);
+        Assert.Single(administrator.Calls);
+
+        gate.SetResult();
+
+        var session = await resolving;
+        Assert.Equal("an-access-token", session.AccessToken);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WithNoOtherSessionOpen_StillAsksAndStillReturnsTheTokens()
+    {
+        // Arrange — an employee signing in with nothing else open. Ending nothing is an ordinary
+        // outcome, not a failure, and it must not change what sign-in returns.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var administrator = new StubSessionAdministrator { SessionsEnded = 0 };
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert
+        Assert.Single(administrator.Calls);
+        Assert.Equal("an-access-token", session.AccessToken);
+        Assert.Equal("a-refresh-token", session.RefreshToken);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenTheOtherSessionsCannotBeEnded_ReturnsNoSessionAtAll()
+    {
+        // Arrange — the credentials were good; ending the other sessions is what failed.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var administrator = new StubSessionAdministrator
+        {
+            Failure = () => new SessionTerminationFailedException("the connection failed"),
+        };
+
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act / Assert — no tokens are handed back "anyway". A session returned here would be one
+        // the store cannot say is the employee's only one, which is the whole promise.
+        await Assert.ThrowsAsync<SessionTerminationFailedException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenTheTokenResponseCarriesNoRefreshToken_ThrowsProviderUnreachable()
+    {
+        // Arrange — a device with no refresh token can never discover a session ended elsewhere,
+        // so half a grant is not a usable sign-in.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, """
+                { "access_token": "an-access-token", "session_state": "a-session", "expires_in": 300 }
+                """);
+
+        var resolver = CreateResolver(handler, out _);
+
+        // Act / Assert
+        await Assert.ThrowsAsync<IdentityProviderUnreachableException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenTheTokenResponseNamesNoSession_RefusesRatherThanGuessing()
+    {
+        // Arrange
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, """
+                { "access_token": "an-access-token", "refresh_token": "a-refresh-token", "expires_in": 300 }
+                """);
+
+        var administrator = new StubSessionAdministrator();
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act / Assert — with no session named, the new session cannot be told from the old ones.
+        // Ending all of them would kill the sign-in that is happening; ending none would leave two
+        // live sessions. Neither is guessed at.
+        await Assert.ThrowsAsync<SessionTerminationFailedException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+
+        Assert.Empty(administrator.Calls);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenTheProviderOmitsTheSubjectClaim_ThrowsIdentityIncomplete()
+    {
+        // Arrange — without the realm's own id for this employee there is nobody to ask the Admin
+        // API about.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, """
+                {
+                  "preferred_username": "100482",
+                  "name": "Avery Brooks",
+                  "store_role": "associate",
+                  "department": "Grocery",
+                  "job_function": "Register"
+                }
+                """);
+
+        var administrator = new StubSessionAdministrator();
+        var resolver = CreateResolver(handler, out _, administrator: administrator);
+
+        // Act
+        var failure = await Assert.ThrowsAsync<EmployeeIdentityIncompleteException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+
+        // Assert — names the claim, so whoever fixes the realm knows what to fix.
+        Assert.Contains("sub", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(administrator.Calls);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_OnSuccess_NeverLogsEitherToken()
+    {
+        // Arrange — tokens are held to the same rule as PINs: never in a log line, at any level.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoResponse);
+
+        var resolver = CreateResolver(handler, out var logger);
+
+        // Act
+        await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+
+        // Assert
+        Assert.NotEmpty(logger.Lines);
+        Assert.False(logger.ContainsText("an-access-token"), "The access token appeared in a log line.");
+        Assert.False(logger.ContainsText("a-refresh-token"), "The refresh token appeared in a log line.");
     }
 
     [Fact]
@@ -293,6 +535,27 @@ public class KeycloakEmployeeIdentityResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenTheProviderOmitsBothTheTierAndTheDepartment_NamesTheTier()
+    {
+        // Arrange — the shared read refuses a missing tier before sign-in checks the department,
+        // so with both missing the failure names the tier.
+        var handler = new StubHttpMessageHandler()
+            .RespondWith(HttpStatusCode.OK, TokenResponse)
+            .RespondWith(HttpStatusCode.OK, UserInfoWithout("store_role", "department"));
+
+        var resolver = CreateResolver(handler, out var logger);
+
+        // Act
+        var failure = await Assert.ThrowsAsync<EmployeeIdentityIncompleteException>(
+            () => resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None));
+
+        // Assert — the exception and the log line both name the tier, not the department.
+        Assert.Contains("store_role", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("department", failure.Message, StringComparison.Ordinal);
+        Assert.True(logger.ContainsText("store_role"), $"The log did not name the tier: {string.Join(" | ", logger.Lines)}");
+    }
+
+    [Fact]
     public async Task ResolveAsync_WithARoleTheStoreDoesNotRecognize_ThrowsIdentityIncomplete()
     {
         // Arrange
@@ -317,6 +580,7 @@ public class KeycloakEmployeeIdentityResolverTests
             .RespondWith(HttpStatusCode.OK, TokenResponse)
             .RespondWith(HttpStatusCode.OK, """
                 {
+                  "sub": "d1b0a4f2-0000-0000-0000-000000000001",
                   "preferred_username": "100482",
                   "name": "Avery Brooks",
                   "store_role": ["store-manager"],
@@ -328,12 +592,12 @@ public class KeycloakEmployeeIdentityResolverTests
         var resolver = CreateResolver(handler, out _);
 
         // Act
-        var identity = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
 
         // Assert
-        Assert.Equal(EmployeeRole.StoreManager, identity.Role);
-        Assert.Equal("Front End", identity.Department);
-        Assert.Equal("Register", identity.JobFunction);
+        Assert.Equal(EmployeeRole.StoreManager, session.Identity.Role);
+        Assert.Equal("Front End", session.Identity.Department);
+        Assert.Equal("Register", session.Identity.JobFunction);
     }
 
     [Fact]
@@ -345,6 +609,7 @@ public class KeycloakEmployeeIdentityResolverTests
             .RespondWith(HttpStatusCode.OK, TokenResponse)
             .RespondWith(HttpStatusCode.OK, """
                 {
+                  "sub": "d1b0a4f2-0000-0000-0000-000000000001",
                   "preferred_username": "100482",
                   "store_role": "associate",
                   "department": "Grocery",
@@ -355,10 +620,10 @@ public class KeycloakEmployeeIdentityResolverTests
         var resolver = CreateResolver(handler, out _);
 
         // Act
-        var identity = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
+        var session = await resolver.ResolveAsync(EmployeeId, Pin, CancellationToken.None);
 
         // Assert
-        Assert.Equal("100482", identity.Name);
+        Assert.Equal("100482", session.Identity.Name);
     }
 
     [Theory]
@@ -504,7 +769,8 @@ public class KeycloakEmployeeIdentityResolverTests
     private static KeycloakEmployeeIdentityResolver CreateResolver(
         StubHttpMessageHandler handler,
         out CapturingLogger<KeycloakEmployeeIdentityResolver> logger,
-        string authority = "https://keycloak.test")
+        string authority = "https://keycloak.test",
+        StubSessionAdministrator? administrator = null)
     {
         logger = new CapturingLogger<KeycloakEmployeeIdentityResolver>();
 
@@ -516,11 +782,16 @@ public class KeycloakEmployeeIdentityResolverTests
             ClientSecret = "a-secret",
         });
 
-        return new KeycloakEmployeeIdentityResolver(new HttpClient(handler), options, logger);
+        return new KeycloakEmployeeIdentityResolver(
+            new HttpClient(handler),
+            administrator ?? new StubSessionAdministrator(),
+            options,
+            logger);
     }
 
     private static string UserInfo(string role) => $$"""
         {
+          "sub": "d1b0a4f2-0000-0000-0000-000000000001",
           "preferred_username": "100482",
           "name": "Avery Brooks",
           "store_role": "{{role}}",
@@ -529,7 +800,7 @@ public class KeycloakEmployeeIdentityResolverTests
         }
         """;
 
-    private static string UserInfoWithout(string omittedClaim)
+    private static string UserInfoWithout(params string[] omittedClaims)
     {
         var claims = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -538,12 +809,59 @@ public class KeycloakEmployeeIdentityResolverTests
             ["job_function"] = "Register",
         };
 
-        claims.Remove(omittedClaim);
+        foreach (var omittedClaim in omittedClaims)
+        {
+            claims.Remove(omittedClaim);
+        }
 
         var rendered = string.Join(
             ",\n  ",
             System.Linq.Enumerable.Select(claims, claim => $"\"{claim.Key}\": \"{claim.Value}\""));
 
-        return $"{{\n  \"preferred_username\": \"100482\",\n  \"name\": \"Avery Brooks\",\n  {rendered}\n}}";
+        return $"{{\n  \"sub\": \"{Subject}\",\n  \"preferred_username\": \"100482\",\n  \"name\": \"Avery Brooks\",\n  {rendered}\n}}";
+    }
+
+    /// <summary>
+    /// Stands in for the Admin API side of sign-in, so these tests stay about what the resolver
+    /// does with a grant rather than about how a session is ended.
+    /// </summary>
+    private sealed class StubSessionAdministrator : IKeycloakSessionAdministrator
+    {
+        /// <summary>Every request to end an employee's other sessions, in order.</summary>
+        public List<TerminationCall> Calls { get; } = [];
+
+        /// <summary>How many other sessions to report as ended.</summary>
+        public int SessionsEnded { get; init; }
+
+        /// <summary>What to throw instead of ending anything, if anything.</summary>
+        public Func<Exception>? Failure { get; init; }
+
+        /// <summary>
+        /// Held open to keep a termination in flight, so a test can see whether sign-in waits for
+        /// it or answers over the top of it.
+        /// </summary>
+        public Task? Gate { get; init; }
+
+        public async Task<int> TerminateOtherSessionsAsync(
+            string userId,
+            string currentSessionId,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add(new TerminationCall(userId, currentSessionId));
+
+            if (Failure is not null)
+            {
+                throw Failure();
+            }
+
+            if (Gate is not null)
+            {
+                await Gate;
+            }
+
+            return SessionsEnded;
+        }
+
+        internal sealed record TerminationCall(string UserId, string CurrentSessionId);
     }
 }

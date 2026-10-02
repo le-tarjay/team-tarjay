@@ -33,6 +33,19 @@
       </span>
     }
 
+    @if (shiftIndicator(); as shift) {
+      <span class="shift-indicator small" role="status">
+        <span
+          class="shift-indicator-dot"
+          [class.shift-indicator-dot-off]="shift.status === 'OffShift'"
+          [class.shift-indicator-dot-on]="shift.status === 'OnShift'"
+          [class.shift-indicator-dot-break]="shift.status === 'OnBreak'"
+          aria-hidden="true"
+        ></span>
+        {{ shift.label }}
+      </span>
+    }
+
     <div class="dropdown">
       <button
         type="button"
@@ -45,6 +58,34 @@
 
       @if (isAccountMenuOpen()) {
         <div class="dropdown-menu dropdown-menu-end show">
+          @if (shiftActionError(); as message) {
+            <div class="alert alert-danger py-2 mx-2 shift-action-error" role="alert">
+              {{ message }}
+            </div>
+          }
+
+          @for (action of shiftActions(); track action.kind) {
+            <button
+              type="button"
+              class="dropdown-item"
+              [class.shift-action-primary]="action.primary"
+              [disabled]="isShiftActionPending()"
+              (click)="takeShiftAction(action)"
+            >
+              {{ action.label }}
+            </button>
+          }
+
+          @if (showsMyScheduleInAccountMenu()) {
+            <a
+              class="dropdown-item"
+              [routerLink]="myScheduleItem.route"
+              (click)="closeAccountMenu()"
+            >
+              {{ myScheduleItem.label }}
+            </a>
+          }
+
           @for (item of accountMenuItems(); track item.label) {
             <button
               type="button"
@@ -55,7 +96,11 @@
             </button>
           }
 
-          @if (accountMenuItems().length > 0) {
+          @if (
+            shiftActions().length > 0 ||
+            showsMyScheduleInAccountMenu() ||
+            accountMenuItems().length > 0
+          ) {
             <hr class="dropdown-divider" />
           }
 

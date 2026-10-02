@@ -43,6 +43,12 @@ public sealed class EmployeeSignInFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IEmployeeIdentityResolver>();
             services.AddSingleton<IEmployeeIdentityResolver>(Resolver);
+
+            // Sign-in is anonymous, so nothing here authenticates and discovery is never reached
+            // for. Pinned anyway, and by the same helper the other factories use: a sign-in test
+            // that one day sends a token should not be the thing that discovers this factory was
+            // the one still pointed at the network.
+            TestRealm.PinDiscoveryToTestRealm(services);
         });
     }
 }
@@ -54,8 +60,14 @@ public sealed class StubEmployeeIdentityResolver : IEmployeeIdentityResolver
 {
     /// <summary>
     /// What to do when asked to resolve. Return an identity to accept the credentials; throw to
-    /// simulate a rejection, an unreachable provider, or anything else.
+    /// simulate a rejection, an unreachable provider, a failed session termination, or anything
+    /// else.
     /// </summary>
+    /// <remarks>
+    /// Still an identity rather than a whole session, because a test that cares which role comes
+    /// back should not have to restate two tokens it has no opinion about. The tokens are their own
+    /// knobs below, for the tests that do.
+    /// </remarks>
     public Func<string, string, EmployeeIdentity> Behavior { get; set; } =
         (employeeId, _) => new EmployeeIdentity
         {
@@ -66,14 +78,25 @@ public sealed class StubEmployeeIdentityResolver : IEmployeeIdentityResolver
             JobFunction = "Register",
         };
 
+    /// <summary>The access token the stubbed provider issues for the session.</summary>
+    public string AccessToken { get; set; } = "an-access-token";
+
+    /// <summary>The refresh token the stubbed provider issues for the session.</summary>
+    public string RefreshToken { get; set; } = "a-refresh-token";
+
     /// <summary>Every call the app made, so a test can assert one was never made at all.</summary>
     public List<ResolveCall> Calls { get; } = [];
 
-    public Task<EmployeeIdentity> ResolveAsync(string employeeId, string pin, CancellationToken cancellationToken)
+    public Task<EmployeeSession> ResolveAsync(string employeeId, string pin, CancellationToken cancellationToken)
     {
         Calls.Add(new ResolveCall(employeeId, pin));
 
-        return Task.FromResult(Behavior(employeeId, pin));
+        return Task.FromResult(new EmployeeSession
+        {
+            Identity = Behavior(employeeId, pin),
+            AccessToken = AccessToken,
+            RefreshToken = RefreshToken,
+        });
     }
 
     /// <summary>One call into the resolver.</summary>

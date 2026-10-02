@@ -122,3 +122,48 @@ public sealed class EmployeeIdentityIncompleteException : IdentityException
     {
     }
 }
+
+/// <summary>
+/// The credentials were accepted, but the employee's other sessions could not be ended, so signing
+/// in cannot be completed.
+/// </summary>
+/// <remarks>
+/// A hard block, for the same reason its siblings are: an employee is meant to be signed in from
+/// one place at a time, and a sign-in that returned a session without having ended the others would
+/// quietly break that promise while looking like an ordinary success. Failing loudly is the only
+/// honest answer — the alternative leaves two live sessions and nobody aware of it. Distinct from
+/// <see cref="IdentityProviderUnreachableException"/> on purpose: the authority was reachable
+/// enough to verify a PIN, so "unreachable" would send whoever debugs it to the wrong place, and
+/// the employee's own credentials were never in question.
+/// </remarks>
+public sealed class SessionTerminationFailedException : IdentityException
+{
+    private const string DefaultMessage =
+        "Sign-in was not completed because the employee's other sessions could not be ended.";
+
+    /// <summary>
+    /// Initializes the exception, describing why the other sessions could not be ended.
+    /// </summary>
+    /// <param name="reason">
+    /// What went wrong, e.g. "the admin API returned 403". Never contains a credential, a PIN, or
+    /// any token — including the service account's own.
+    /// </param>
+    public SessionTerminationFailedException(string reason)
+        : base($"{DefaultMessage} ({reason})")
+    {
+    }
+
+    /// <summary>
+    /// Initializes the exception, describing why the other sessions could not be ended, and the
+    /// failure that caused it.
+    /// </summary>
+    /// <param name="reason">
+    /// What went wrong, e.g. "the connection failed". Never contains a credential, a PIN, or any
+    /// token — including the service account's own.
+    /// </param>
+    /// <param name="innerException">The underlying failure.</param>
+    public SessionTerminationFailedException(string reason, Exception innerException)
+        : base($"{DefaultMessage} ({reason})", innerException)
+    {
+    }
+}

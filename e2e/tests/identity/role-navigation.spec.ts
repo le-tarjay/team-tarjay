@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { SIGNED_IN_URL, signIn } from '../../fixtures/auth';
+import { signInOffShift, signInOnShift } from '../../fixtures/auth';
 import {
   ASSOCIATE,
   CUSTOMER_SUPPORT_ASSOCIATE,
@@ -18,7 +18,10 @@ import {
  * from that.
  *
  * This is the coverage the epic turns on — "so that a future change can't
- * silently break who sees what". Everything below is asserted through what a
+ * silently break who sees what". The role-based nav is the on-shift nav: off
+ * shift or on break it is suspended, so the nav tests clock in first. The
+ * account menu's admin entries do not depend on the shift, so those tests stay
+ * off shift. Everything below is asserted through what a
  * signed-in employee can actually see: link and button names, and the header's
  * own text. No CSS selectors, no `data-testid`.
  */
@@ -96,8 +99,7 @@ test.describe('identity and role-based navigation', () => {
       `${employee.role} ${employee.employeeId} signs in and sees "${roleSpecificItem}" — ${because}`,
       { tag: '@smoke' },
       async ({ page }) => {
-        await signIn(page, employee);
-        await expect(page).toHaveURL(SIGNED_IN_URL);
+        await signInOnShift(page, employee);
 
         const nav = page.getByRole('navigation');
 
@@ -129,8 +131,7 @@ test.describe('identity and role-based navigation', () => {
     'a Store Manager finds the admin entries in the account menu',
     { tag: '@smoke' },
     async ({ page }) => {
-      await signIn(page, STORE_MANAGER);
-      await expect(page).toHaveURL(SIGNED_IN_URL);
+      await signInOffShift(page, STORE_MANAGER);
 
       await page.getByRole('button', { name: 'Account', exact: true }).click();
 
@@ -144,8 +145,7 @@ test.describe('identity and role-based navigation', () => {
     'every other role finds an account menu without the admin entries',
     { tag: '@smoke' },
     async ({ page }) => {
-      await signIn(page, DEPARTMENT_MANAGER);
-      await expect(page).toHaveURL(SIGNED_IN_URL);
+      await signInOffShift(page, DEPARTMENT_MANAGER);
 
       await page.getByRole('button', { name: 'Account', exact: true }).click();
 

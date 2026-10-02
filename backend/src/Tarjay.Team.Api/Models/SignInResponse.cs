@@ -5,8 +5,8 @@ using Tarjay.Team.Domain.Identity;
 namespace Tarjay.Team.Api.Models;
 
 /// <summary>
-/// The identity a successful sign-in resolved to: who the employee is and what authority they
-/// hold, for the whole of the session that follows.
+/// The session a successful sign-in resolved to: who the employee is, what authority they hold for
+/// the whole of the session that follows, and the tokens that session runs on.
 /// </summary>
 public sealed class SignInResponse
 {
@@ -39,20 +39,44 @@ public sealed class SignInResponse
     [JsonPropertyName("jobFunction")]
     public required string JobFunction { get; init; }
 
-    /// <summary>Maps a resolved domain identity onto the wire shape.</summary>
-    /// <param name="identity">The identity the authority resolved.</param>
+    /// <summary>
+    /// The access token this session runs on, exactly as the identity authority issued it.
+    /// </summary>
+    /// <remarks>
+    /// Named the way the authority names it, rather than in this envelope's camelCase, because it
+    /// is the authority's artifact passed through untouched and not a field this API invented. A
+    /// consumer reading <c>access_token</c> here and <c>access_token</c> from a refresh against
+    /// Keycloak itself is reading the same thing under the same name.
+    /// </remarks>
+    [JsonPropertyName("access_token")]
+    public required string AccessToken { get; init; }
+
+    /// <summary>
+    /// The refresh token this session runs on, exactly as the identity authority issued it. Named
+    /// as the authority names it, for the same reason as <see cref="AccessToken"/>.
+    /// </summary>
+    [JsonPropertyName("refresh_token")]
+    public required string RefreshToken { get; init; }
+
+    /// <summary>Maps a resolved domain session onto the wire shape.</summary>
+    /// <param name="session">The session the authority resolved.</param>
     /// <returns>The response body's <c>data</c> payload.</returns>
-    public static SignInResponse From(EmployeeIdentity identity)
+    public static SignInResponse From(EmployeeSession session)
     {
-        ArgumentNullException.ThrowIfNull(identity);
+        ArgumentNullException.ThrowIfNull(session);
 
         return new SignInResponse
         {
-            EmployeeId = identity.EmployeeId,
-            Name = identity.Name,
-            Role = identity.Role.ToString(),
-            Department = identity.Department,
-            JobFunction = identity.JobFunction,
+            EmployeeId = session.Identity.EmployeeId,
+            Name = session.Identity.Name,
+            Role = session.Identity.Role.ToString(),
+            Department = session.Identity.Department,
+            JobFunction = session.Identity.JobFunction,
+
+            // Passed through, never re-wrapped or re-signed: the store issues no session artifact
+            // of its own, so there is nothing here that could disagree with what Keycloak holds.
+            AccessToken = session.AccessToken,
+            RefreshToken = session.RefreshToken,
         };
     }
 }

@@ -49,6 +49,14 @@ internal sealed class IdentityExceptionHandler : IExceptionHandler
                 StatusCodes.Status502BadGateway,
                 "The employee's identity could not be resolved."),
 
+            // The same status as an unreachable authority, and for the same reason from the
+            // employee's side: signing in is unavailable right now and trying again later is the
+            // only thing they can do about it. The title and detail are what tell the two apart
+            // for whoever reads the logs, since the fix for each is completely different.
+            SessionTerminationFailedException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Sign-in is unavailable."),
+
             _ => (0, string.Empty),
         };
 

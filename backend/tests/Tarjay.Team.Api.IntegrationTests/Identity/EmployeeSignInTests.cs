@@ -49,6 +49,80 @@ public class EmployeeSignInTests
     }
 
     [Fact]
+    public async Task SignIn_WithValidCredentials_ReturnsTheProvidersTokensUnmodified()
+    {
+        // Arrange
+        using var factory = new EmployeeSignInFactory();
+        factory.Resolver.AccessToken = "the-access-token-keycloak-issued";
+        factory.Resolver.RefreshToken = "the-refresh-token-keycloak-issued";
+
+        using var client = factory.CreateClient();
+
+        // Act
+        using var response = await client.PostAsJsonAsync(SignInUrl, new { employeeId = "100482", pin = Pin });
+
+        // Assert — passed through exactly as the authority issued them, under the authority's own
+        // names, because that is what a consumer refreshing against Keycloak will be reading.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = body.RootElement.GetProperty("data");
+
+        Assert.Equal("the-access-token-keycloak-issued", data.GetProperty("access_token").GetString());
+        Assert.Equal("the-refresh-token-keycloak-issued", data.GetProperty("refresh_token").GetString());
+    }
+
+    [Fact]
+    public async Task SignIn_WhenTheOtherSessionsCannotBeEnded_ReturnsNoTokens()
+    {
+        // Arrange — the credentials were good, but the employee's other sessions are still live.
+        using var factory = new EmployeeSignInFactory();
+        factory.Resolver.Behavior = (_, _) =>
+            throw new SessionTerminationFailedException("the admin API returned 403");
+
+        using var client = factory.CreateClient();
+
+        // Act
+        using var response = await client.PostAsJsonAsync(SignInUrl, new { employeeId = "100482", pin = Pin });
+
+        // Assert — not a success with tokens attached. A device holding tokens from a sign-in that
+        // could not end the other sessions would believe a guarantee the store never delivered.
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+
+        var raw = await response.Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("access_token", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("refresh_token", raw, StringComparison.Ordinal);
+
+        using var body = JsonDocument.Parse(raw);
+        Assert.False(body.RootElement.TryGetProperty("data", out _));
+    }
+
+    [Fact]
+    public async Task SignIn_WhenTheOtherSessionsCannotBeEnded_IsNotReportedAsARejectedCredential()
+    {
+        // Arrange
+        using var factory = new EmployeeSignInFactory();
+        factory.Resolver.Behavior = (_, _) =>
+            throw new SessionTerminationFailedException("the admin API returned 403");
+
+        using var client = factory.CreateClient();
+
+        // Act
+        using var response = await client.PostAsJsonAsync(SignInUrl, new { employeeId = "100482", pin = Pin });
+
+        // Assert — the employee's PIN was fine, and telling them otherwise would send them off
+        // retyping a credential that was never the problem.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var detail = body.RootElement.GetProperty("detail").GetString();
+
+        Assert.Contains("other sessions could not be ended", detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SignIn_WithValidCredentials_WrapsTheIdentityInTheSuccessEnvelope()
     {
         // Arrange

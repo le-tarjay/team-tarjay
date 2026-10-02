@@ -42,6 +42,14 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>Queues a response produced by the test itself, for anything the other forms cannot express.</summary>
+    public StubHttpMessageHandler RespondWith(Func<HttpRequestMessage, HttpResponseMessage> respond)
+    {
+        _responses.Enqueue(respond);
+
+        return this;
+    }
+
     /// <summary>Queues a thrown exception in place of a response.</summary>
     public StubHttpMessageHandler Throws(Exception exception)
     {

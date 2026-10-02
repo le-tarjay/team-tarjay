@@ -1,0 +1,16 @@
+// The week's total, set apart as in the mockup (Team-Targét.dc.html, My
+// schedule screen): a small uppercase label over a large figure.
+.week-hours-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.week-hours-total {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

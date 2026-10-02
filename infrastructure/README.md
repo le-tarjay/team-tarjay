@@ -63,7 +63,8 @@ That URL is the right thing for a test harness to poll, rather than a fixed slee
 
 Employee ID is the username, PIN is the password. One employee per role, plus a
 Customer Support case, so every branch of the frontend's role-based navigation is
-reachable with a real credential:
+reachable with a real credential. Two more work in Electronics, a second department, so
+manager approval can be refused for a Department Manager outside their own department:
 
 | Employee ID | PIN | Name | Role | Department | Job function |
 |---|---|---|---|---|---|
@@ -72,10 +73,92 @@ reachable with a real credential:
 | `10043` | `6639` | Alex Mercer | StoreManager | Store Operations | Store Management |
 | `10044` | `7741` | Priya Raman | ReceivingAssociate | Receiving | Receiving |
 | `10045` | `8852` | Chris Bell | Associate | Grocery | Customer Support |
+| `10046` | `9963` | Morgan Ellis | DepartmentManager | Electronics | Stocking |
+| `10047` | `3196` | Jamie Ortiz | Associate | Electronics | Stocking |
 
 A wrong PIN is rejected by Keycloak, which is the case the API turns into its own
-invalid-credentials response. Brute-force protection is deliberately off, so repeating
-that test does not lock an employee out and break the next run.
+invalid-credentials response.
+
+### Lockout after repeated wrong PINs
+
+Brute-force protection is on. It is the only limit on guessing a PIN: manager approval
+checks a manager's PIN from any register, and nothing in the API rate-limits that. The
+settings are Keycloak's defaults, written out in the export:
+
+- **30 wrong PINs** for one Employee ID lock that employee out for 60 seconds. Each
+  further lockout adds 60 seconds, up to 15 minutes. The failure count resets after 12
+  hours, or on a successful sign-in.
+- **Two wrong PINs less than a second apart** lock the employee out for 60 seconds
+  straight away. A test that submits wrong PINs in a tight loop trips this.
+- **While locked, the correct PIN is refused too.** Keycloak answers exactly as it does
+  for a wrong PIN, `401 invalid_grant` "Invalid user credentials", so the API refuses it
+  the same way. Only Keycloak's event log says `user_temporarily_disabled`.
+- **The lockout covers the employee's own sign-in as well as their approvals.** Anyone at
+  a register can lock a manager out for a short time by entering that manager's ID with
+  wrong PINs. This is accepted for this build.
+
+The lockout is per employee, so other employees are unaffected. It lives in Keycloak's
+store, so `docker compose down` clears it. To clear it on a running stack, use the admin
+console: *Users* → the employee → *Unlock*, or `DELETE
+/admin/realms/team-targe/attack-detection/brute-force/users/{id}`.
+
+### The admin client, for ending an employee's other sessions
+
+Signing in on one device ends that employee's session everywhere else, and the API does
+that by calling Keycloak's Admin API. It needs an identity of its own to make that call,
+and the realm carries one: a second client, `team-targe-admin`.
+
+| | `team-targe-store` | `team-targe-admin` |
+|---|---|---|
+| Who uses it | every employee, signing in | the API, and only the API |
+| Kind | public | confidential — has a secret |
+| Grant | password (Employee ID + PIN) | client credentials |
+| Permission | none beyond reading its own identity | `manage-users` on `realm-management`, and nothing else |
+
+**It is not the `admin` / `admin` console login.** That bootstrap credential opens the
+admin console and nothing in the application ever authenticates with it; giving the API
+a scoped service account instead is the entire point of the second client. Its secret is
+`local-development-only-not-a-real-secret`, committed in the realm export and passed to
+the API by compose as `Identity__Admin__ClientId` / `Identity__Admin__ClientSecret` — as
+throwaway as `admin` / `admin` and the PINs above, and for the same reason: this stack
+only ever runs on a developer's machine. A deployed Keycloak would take a real secret
+from a secret store, which CONVENTIONS.md's *Configuration and secrets* requires and
+which nothing here provisions yet.
+
+`manage-users` is the least Keycloak will accept for the logout call. `realm-admin` would
+also work and would carry every other administrative power with it, so the narrower role
+is deliberate and `tests/test_local_realm.py` asserts the service account holds exactly
+that one grant.
+
+To confirm the client works against a running stack — a token, then a session-termination
+call for a signed-in employee:
+
+```bash
+# 1. The service account's own token, via the client-credentials grant.
+TOKEN=$(curl -fsS -X POST \
+  http://localhost:8080/realms/team-targe/protocol/openid-connect/token \
+  -d grant_type=client_credentials \
+  -d client_id=team-targe-admin \
+  -d client_secret=local-development-only-not-a-real-secret | node -pe 'JSON.parse(require("fs").readFileSync(0)).access_token')
+
+# It must carry manage-users -- decode the payload and look under realm-management.
+echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | node -pe 'JSON.parse(require("fs").readFileSync(0)).resource_access["realm-management"].roles'
+
+# 2. Give an employee a session to terminate, then find their user id.
+curl -fsS -X POST http://localhost:8080/realms/team-targe/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=team-targe-store -d username=10041 -d password=4417 >/dev/null
+USER_ID=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/admin/realms/team-targe/users?username=10041" | node -pe 'JSON.parse(require("fs").readFileSync(0))[0].id')
+
+# 3. Terminate it. 204, and the session list is empty afterwards.
+curl -fsS -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/admin/realms/team-targe/users/$USER_ID/logout"
+curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/admin/realms/team-targe/users/$USER_ID/sessions"
+```
+
+Nothing in the API calls this yet; LET-130 writes that call and consumes the two settings
+compose already passes.
 
 ### The realm is a file, not a configuration session
 
@@ -88,7 +171,8 @@ on every run.
 The practical consequence: **do not configure this realm through the admin console.**
 Anything clicked there is gone at the next teardown. Change the export and restart.
 
-Three settings in it are load-bearing and easy to lose:
+The settings below are load-bearing and easy to lose. So is `bruteForceProtected: true`,
+covered under *Lockout after repeated wrong PINs*.
 
 - **The three custom claims each need a protocol mapper with *Add to userinfo* on.** The
   API reads identity from `/userinfo`, and a user-attribute mapper does not reach
@@ -101,6 +185,11 @@ Three settings in it are load-bearing and easy to lose:
   no required actions.** Employees have no email address; Keycloak's default profile
   requires one, and an incomplete profile attaches a required action that makes the
   password grant fail instead of returning a token.
+- **`team-targe-admin`'s permission lives in `users`, not on the client.** A realm export
+  grants a service account its roles through a user entry carrying
+  `serviceAccountClientId`, so the client and its `manage-users` grant sit in two
+  different sections of the file. The client alone imports fine, issues tokens fine, and
+  is refused by the Admin API with a 403 that looks like a bug in the caller.
 
 `tests/test_local_realm.py` asserts all of this, so a regression fails `pytest` rather
 than surfacing as a failed sign-in.
@@ -137,9 +226,14 @@ this directory's business.
 - **`Identity__Authority` is overridden in `docker-compose.yml`, on purpose.**
   `appsettings.json` configures `http://localhost:8080`, which is right on a developer's
   machine and wrong inside a container, where `localhost:8080` is the API itself. The
-  realm and client id are deliberately *not* repeated in compose — they are correct in
-  `appsettings.json`, and duplicating them would let compose silently override a real
-  change to it.
+  realm and the *employee-facing* client id are deliberately *not* repeated in compose —
+  they are correct in `appsettings.json`, and duplicating them would let compose silently
+  override a real change to it. `Identity__Admin__ClientId` and
+  `Identity__Admin__ClientSecret` are the one exception, and are not duplication:
+  `appsettings.json` has no `Identity:Admin` section to contradict. The secret could not
+  live there anyway, and its client id keeps it company rather than being split across
+  two files while nothing binds the section yet. LET-130, which adds that binding, may
+  move the non-secret half.
 - **Base images are pinned** (`keycloak:26.0`, `dotnet/sdk:10.0`, `dotnet/aspnet:10.0`).
   The API targets `net10.0`, and a floating tag turns that into a restore error that
   reads like a code problem.

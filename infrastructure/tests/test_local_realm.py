@@ -11,8 +11,22 @@ Every value asserted below is dictated by merged backend code, not chosen here:
 the grant type and the fact that identity is read from /userinfo. A test that drifts
 from those is reporting a real problem, not a stale expectation.
 
-What this cannot cover: whether Keycloak actually accepts the export. That needs a
-running container. See the PR and LET-119's completion report.
+One block of values is the exception, and is named as one: LET-129's `team-targe-admin`
+client and its service account. Nothing consumes them yet -- LET-130 writes the call that
+does -- so what fixes their shape is Keycloak's own client-credentials grant and Admin
+API, plus the key names `docker-compose.yml` passes the API. A drift between the secret
+there and the secret here is a real failure, and tests/test_local_stack.py asserts the
+two match.
+
+LET-149 adds a second block chosen here rather than dictated by backend code: the
+Electronics employees, which exist so manager approval's cross-department refusal has
+someone to refuse, and the brute-force lockout settings, which are Keycloak 26.0's own
+defaults written out so the lockout window is readable in the export.
+
+What this cannot cover: whether Keycloak actually accepts the export, or whether the
+lockout behaves as configured. That needs a running container. See the PR and LET-119's
+completion report -- for the admin client's token and Admin API call specifically,
+LET-129's, and for the second department and the lockout, LET-149's.
 """
 
 import json
@@ -26,6 +40,24 @@ REALM_FILE = Path(__file__).resolve().parents[1] / "local" / "keycloak" / "team-
 # appsettings.json, Identity section.
 EXPECTED_REALM = "team-targe"
 EXPECTED_CLIENT_ID = "team-targe-store"
+
+# LET-129's confidential client, and the service account Keycloak creates for it. The API
+# authenticates as this client to terminate an employee's other sessions at sign-in
+# (LET-130 writes that call). `docker-compose.yml` passes the pair to the API as
+# Identity__Admin__ClientId / Identity__Admin__ClientSecret; tests/test_local_stack.py
+# asserts that end, including that the secret there and the secret here are the same string.
+ADMIN_CLIENT_ID = "team-targe-admin"
+ADMIN_SERVICE_ACCOUNT_USERNAME = "service-account-team-targe-admin"
+
+# Keycloak's own built-in client, created for every realm, whose roles gate the Admin API.
+# It is not in this export and must not be: Keycloak provides it, and declaring it here
+# would fight the realm's own bootstrap.
+REALM_MANAGEMENT_CLIENT = "realm-management"
+
+# The single role the service account is granted. `manage-users` is what Keycloak requires
+# for POST /admin/realms/{realm}/users/{id}/logout -- the call that ends every session a
+# user holds. Not `realm-admin`, which carries every other administrative power with it.
+SESSION_TERMINATION_ROLE = "manage-users"
 
 # KeycloakOptions' RoleClaim / DepartmentClaim / JobFunctionClaim defaults. Each is a
 # realm user-attribute mapper rather than a standard OIDC claim, and each is hard-required
@@ -78,6 +110,41 @@ SEEDED_EMPLOYEES: dict[str, dict[str, str]] = {
         "department": "Grocery",
         "job_function": "Customer Support",
     },
+    # LET-149: a second department's manager and associate, so a Department Manager can be
+    # refused for an approval outside their own department.
+    "10046": {
+        "pin": "9963",
+        "firstName": "Morgan",
+        "lastName": "Ellis",
+        "store_role": "DepartmentManager",
+        "department": "Electronics",
+        "job_function": "Stocking",
+    },
+    "10047": {
+        "pin": "3196",
+        "firstName": "Jamie",
+        "lastName": "Ortiz",
+        "store_role": "Associate",
+        "department": "Electronics",
+        "job_function": "Stocking",
+    },
+}
+
+# The department every LET-119 employee below Store Manager works in. Manager approval is
+# scoped by department, so the realm needs a manager and an associate somewhere else.
+FIRST_DEPARTMENT = "Grocery"
+
+# Keycloak 26.0's own brute-force defaults, written out in the export (LET-149). The story
+# asks for the setting on and nothing more, so these must stay Keycloak's defaults: 30
+# failures lock a user out for 60 seconds, growing per lockout to at most 15 minutes, and
+# two failures less than a second apart lock them out for 60 seconds straight away.
+BRUTE_FORCE_SETTINGS: dict[str, int] = {
+    "failureFactor": 30,
+    "waitIncrementSeconds": 60,
+    "maxFailureWaitSeconds": 900,
+    "maxDeltaTimeSeconds": 43200,
+    "quickLoginCheckMilliSeconds": 1000,
+    "minimumQuickLoginWaitSeconds": 60,
 }
 
 
@@ -96,9 +163,41 @@ def client(realm: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def users_by_username(realm: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def admin_client(realm: dict[str, Any]) -> dict[str, Any]:
+    clients = cast(list[dict[str, Any]], realm["clients"])
+    matching = [entry for entry in clients if entry["clientId"] == ADMIN_CLIENT_ID]
+    assert len(matching) == 1, f"expected exactly one {ADMIN_CLIENT_ID} client"
+    return matching[0]
+
+
+@pytest.fixture(scope="module")
+def service_accounts(realm: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every service-account user in the export.
+
+    Keycloak represents a confidential client's service account as a user carrying
+    `serviceAccountClientId`, which is also the only place a realm export can grant it a
+    role. So the client and its permission live in two different sections of this file,
+    and neither half is any use alone.
+    """
     users = cast(list[dict[str, Any]], realm["users"])
-    return {cast(str, user["username"]): user for user in users}
+    return [user for user in users if "serviceAccountClientId" in user]
+
+
+@pytest.fixture(scope="module")
+def users_by_username(realm: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The realm's *employees*, keyed by username -- service accounts excluded.
+
+    The exclusion arrived with LET-129, which added the first service account to this
+    realm, and it is a narrowing of what this fixture covers rather than of what any
+    assertion below proves. Every test in TestSeededEmployees is about an employee: a
+    PIN, three custom claims, a role from the closed set. A service account has none of
+    those, so including it would not test it -- it would raise KeyError in tests that are
+    not about it. `test_exactly_the_seeded_employees_are_present` still pins the
+    employee set exactly, and the service account is asserted exactly, and
+    separately, in TestAdminServiceAccount.
+    """
+    users = cast(list[dict[str, Any]], realm["users"])
+    return {cast(str, user["username"]): user for user in users if "serviceAccountClientId" not in user}
 
 
 @pytest.fixture(scope="module")
@@ -129,11 +228,23 @@ class TestRealm:
         assert "upperCase" not in policy
         assert "specialChars" not in policy
 
-    def test_brute_force_protection_is_off(self, realm: dict[str, Any]) -> None:
-        # A suite asserting the wrong-PIN rejection runs it every pass. With protection
-        # on, the seeded employee is temporarily disabled and the next run's *valid*
-        # sign-in fails for a reason nothing in the test explains.
-        assert realm["bruteForceProtected"] is False
+    def test_brute_force_protection_is_on(self, realm: dict[str, Any]) -> None:
+        # LET-149, reversing LET-119's deliberate `false`. Manager approval checks a PIN
+        # typed at any register, and Keycloak's per-user lockout is the only limit on
+        # guessing it: no application-level limiter exists. The lockout covers the
+        # employee's own sign-in too, which the story accepts.
+        assert realm["bruteForceProtected"] is True
+
+    def test_the_lockout_is_temporary(self, realm: dict[str, Any]) -> None:
+        # A permanent lockout would disable a seeded employee until someone re-enables
+        # them by hand, and the next valid sign-in would fail for no visible reason.
+        assert realm["permanentLockout"] is False
+
+    @pytest.mark.parametrize("setting", sorted(BRUTE_FORCE_SETTINGS))
+    def test_the_lockout_uses_keycloaks_defaults(self, realm: dict[str, Any], setting: str) -> None:
+        # The configured lockout window the acceptance criteria refer to. Pinned so that
+        # tuning it is a visible edit here rather than a drift nobody decided.
+        assert realm[setting] == BRUTE_FORCE_SETTINGS[setting]
 
     def test_employees_cannot_self_register_or_sign_in_by_email(self, realm: dict[str, Any]) -> None:
         # Employees are seeded and have no email address; Employee ID + PIN is the only path.
@@ -197,6 +308,120 @@ class TestClient:
         assert "defaultClientScopes" not in client
 
 
+class TestAdminClient:
+    """The confidential client backing the admin session-termination call (LET-129).
+
+    Everything here is structure: that the client exists, is confidential, has a service
+    account, and can do nothing a service account should not. What no assertion in this
+    file can reach is whether Keycloak issues that service account a token carrying
+    `manage-users`, or whether the token then works against the logout-sessions endpoint.
+    Both need the container running -- see the PR and LET-129's completion report for the
+    commands, and for the fact that they were not run.
+    """
+
+    def test_the_client_exists_and_is_enabled(self, admin_client: dict[str, Any]) -> None:
+        assert admin_client["enabled"] is True
+        assert admin_client["protocol"] == "openid-connect"
+
+    def test_the_client_is_confidential_with_a_secret(self, admin_client: dict[str, Any]) -> None:
+        # A public client cannot hold a service account: the client-credentials grant
+        # authenticates the client itself, and a public one has no credential to present.
+        assert admin_client["publicClient"] is False
+        assert cast(str, admin_client["secret"]).strip() != ""
+
+    def test_the_client_has_a_service_account(self, admin_client: dict[str, Any]) -> None:
+        # Off by default on a new client, and the setting the whole story rests on: with
+        # it off, Keycloak refuses the client-credentials grant and creates no account to
+        # carry the role.
+        assert admin_client["serviceAccountsEnabled"] is True
+
+    @pytest.mark.parametrize("flow", ["standardFlowEnabled", "directAccessGrantsEnabled", "implicitFlowEnabled"])
+    def test_no_interactive_flow_is_enabled(self, admin_client: dict[str, Any], flow: str) -> None:
+        # Nothing signs in *as a person* through this client. Direct access grants in
+        # particular would turn a leaked secret into a way to exchange any employee's PIN.
+        assert admin_client[flow] is False
+
+    @pytest.mark.parametrize("field", ["redirectUris", "webOrigins"])
+    def test_the_client_offers_no_browser_surface(self, admin_client: dict[str, Any], field: str) -> None:
+        # There is no browser leg at all, so an entry here could only ever be a mistake.
+        assert cast(list[str], admin_client[field]) == []
+
+    def test_it_is_the_only_client_with_a_service_account(self, realm: dict[str, Any]) -> None:
+        # Stated over the whole realm rather than about this client alone: the point of
+        # LET-129 is that exactly one identity can reach the Admin API, and a second
+        # service account appearing anywhere would quietly undo that.
+        clients = cast(list[dict[str, Any]], realm["clients"])
+        with_accounts = [c["clientId"] for c in clients if c.get("serviceAccountsEnabled")]
+        assert with_accounts == [ADMIN_CLIENT_ID]
+
+    def test_the_employee_facing_client_stays_public_and_secretless(self, client: dict[str, Any]) -> None:
+        # The two clients are deliberately different shapes, and the risk when adding the
+        # second is bleeding its settings into the first. `KeycloakOptions.ClientSecret`
+        # ships empty and the resolver omits `client_secret` when it is, so a secret
+        # appearing on the store client would reject every employee sign-in.
+        assert client["publicClient"] is True
+        assert "secret" not in client
+        assert client["serviceAccountsEnabled"] is False
+
+    def test_keycloaks_own_realm_management_client_is_not_redeclared(self, realm: dict[str, Any]) -> None:
+        # `realm-management` is created by Keycloak for every realm and holds the
+        # `manage-users` role granted below. Declaring it in an export means defining its
+        # roles by hand, which is how a grant ends up pointing at a role that no longer
+        # means what it did.
+        declared = {cast(str, c["clientId"]) for c in cast(list[dict[str, Any]], realm["clients"])}
+        assert REALM_MANAGEMENT_CLIENT not in declared
+
+
+class TestAdminServiceAccount:
+    def test_exactly_one_service_account_exists_and_it_is_the_admin_clients(
+        self, service_accounts: list[dict[str, Any]]
+    ) -> None:
+        assert len(service_accounts) == 1
+        account = service_accounts[0]
+        assert account["serviceAccountClientId"] == ADMIN_CLIENT_ID
+        # Keycloak derives this name from the client id and links the two by it. A
+        # mismatch imports as an ordinary user that happens to hold an admin role.
+        assert account["username"] == ADMIN_SERVICE_ACCOUNT_USERNAME
+
+    def test_the_service_account_is_enabled_with_no_required_actions(
+        self, service_accounts: list[dict[str, Any]]
+    ) -> None:
+        # A required action here would not prompt anyone -- there is no human at this
+        # account -- it would just fail the client-credentials grant.
+        account = service_accounts[0]
+        assert account["enabled"] is True
+        assert account["requiredActions"] == []
+
+    def test_it_holds_manage_users_on_realm_management(self, service_accounts: list[dict[str, Any]]) -> None:
+        client_roles = cast(dict[str, list[str]], service_accounts[0]["clientRoles"])
+        assert client_roles[REALM_MANAGEMENT_CLIENT] == [SESSION_TERMINATION_ROLE]
+
+    def test_it_holds_nothing_beyond_manage_users(self, service_accounts: list[dict[str, Any]]) -> None:
+        # The fringe case LET-129 names: scoped to `manage-users` only, not broader admin
+        # rights. Asserted as an equality over every grant rather than as the presence of
+        # the one, because `realm-admin` sitting alongside it would satisfy presence.
+        #
+        # This is also what bounds the client's `fullScopeAllowed: true`, which is what
+        # puts the role into the issued token: full scope is only as wide as the roles the
+        # account actually holds, so the grant below is the real boundary.
+        account = service_accounts[0]
+        assert cast(dict[str, Any], account["clientRoles"]) == {REALM_MANAGEMENT_CLIENT: [SESSION_TERMINATION_ROLE]}
+        assert "realmRoles" not in account, "a realm role on this account is a power nothing asked for"
+
+    def test_the_service_account_has_no_password(self, service_accounts: list[dict[str, Any]]) -> None:
+        # It authenticates with the client secret, through the client-credentials grant.
+        # A password would additionally make it signable-into as a user.
+        assert "credentials" not in service_accounts[0]
+
+    def test_no_employee_holds_an_administrative_role(self, users_by_username: dict[str, dict[str, Any]]) -> None:
+        # The other half of the containment: the seeded employees are the accounts a
+        # person can actually sign into, with a four-digit PIN that the brute-force lockout
+        # only slows down. None of them may carry a role that reaches the Admin API.
+        for username, user in users_by_username.items():
+            assert "clientRoles" not in user, f"employee {username} holds client roles"
+            assert "realmRoles" not in user, f"employee {username} holds realm roles"
+
+
 class TestUserProfile:
     @pytest.mark.parametrize("claim", CUSTOM_CLAIMS)
     def test_each_custom_claim_is_a_declared_attribute(self, user_profile: dict[str, Any], claim: str) -> None:
@@ -226,8 +451,31 @@ class TestUserProfile:
 
 
 class TestSeededEmployees:
-    def test_exactly_the_five_seeded_employees_are_present(self, users_by_username: dict[str, dict[str, Any]]) -> None:
+    def test_exactly_the_seeded_employees_are_present(self, users_by_username: dict[str, dict[str, Any]]) -> None:
+        # LET-119's five, plus LET-149's two in a second department.
         assert set(users_by_username) == set(SEEDED_EMPLOYEES)
+        assert len(users_by_username) == 7
+
+    @pytest.mark.parametrize("role", ["DepartmentManager", "Associate"])
+    def test_a_second_department_has_a_manager_and_an_associate(
+        self, users_by_username: dict[str, dict[str, Any]], role: str
+    ) -> None:
+        # LET-149. Manager approval refuses a Department Manager outside their own
+        # department, which needs a manager and a requester who are not in Grocery.
+        # Store Operations and Receiving do not count: neither has a Department Manager.
+        departments_with_a_manager = {
+            cast(str, u["attributes"]["department"][0])
+            for u in users_by_username.values()
+            if u["attributes"]["store_role"] == ["DepartmentManager"]
+        } - {FIRST_DEPARTMENT}
+        assert departments_with_a_manager, "no Department Manager outside Grocery"
+        for department in departments_with_a_manager:
+            in_department = [
+                u
+                for u in users_by_username.values()
+                if u["attributes"]["department"] == [department] and u["attributes"]["store_role"] == [role]
+            ]
+            assert in_department, f"{department} has a Department Manager but no {role}"
 
     def test_every_role_in_the_closed_set_is_reachable(self, users_by_username: dict[str, dict[str, Any]]) -> None:
         # The point of the seed: each of the four roles signs in with a real credential,

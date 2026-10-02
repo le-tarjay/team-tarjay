@@ -1,16 +1,30 @@
-import { provideHttpClient } from '@angular/common/http';
-import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import {
+  ApplicationConfig,
+  inject,
+  provideEnvironmentInitializer,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
+import { bearerTokenInterceptor } from './core/auth/bearer-token.interceptor';
+import { SessionTeardownService } from './core/auth/session-teardown.service';
+import { OffDutyRedirectService } from './core/navigation/off-duty-redirect.service';
+import { ScheduleService } from './core/schedule/schedule.service';
+import { ShiftService } from './core/shift/shift.service';
 import {
+  APPROVAL_SERVICE,
   AUTH_SERVICE,
   BUYER_SERVICE,
   PAYMENT_SERVICE,
   PRODUCT_SERVICE,
   SALES_SERVICE,
+  SCHEDULE_SERVICE,
+  SHIFT_SERVICE,
 } from './core/tokens';
+import { MockApprovalService } from './mocks/mock-approval.service';
 import { MockBuyerService } from './mocks/mock-buyer.service';
 import { MockPaymentService } from './mocks/mock-payment.service';
 import { MockProductService } from './mocks/mock-product.service';
@@ -20,13 +34,27 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient(),
+    provideHttpClient(withInterceptors([bearerTokenInterceptor])),
+    // Eager on purpose: both are watchers, and nothing in the app injects
+    // them. A session ends on a background timer, and a shift read lands after
+    // sign-in has already navigated, both with nobody on the call stack, so
+    // the thing that reacts has to already exist by then.
+    provideEnvironmentInitializer(() => {
+      inject(SessionTeardownService);
+      inject(OffDutyRedirectService);
+    }),
     {
       // `useExisting`, not `useClass`: AuthService is `providedIn: 'root'`, and
       // the signed-in employee is session state. A second instance would be a
       // second, silently divergent copy of it.
       provide: AUTH_SERVICE,
       useExisting: AuthService,
+    },
+    {
+      // Mock until the approval modal lands. The check endpoint is real, but
+      // nothing in the app can reach it until the modal does.
+      provide: APPROVAL_SERVICE,
+      useClass: MockApprovalService,
     },
     {
       provide: BUYER_SERVICE,
@@ -43,6 +71,20 @@ export const appConfig: ApplicationConfig = {
     {
       provide: SALES_SERVICE,
       useClass: MockSalesService,
+    },
+    {
+      // Real from the start — its endpoints existed before it did, so there
+      // was never a mock to swap out. `useExisting` for the reason AUTH_SERVICE
+      // gives: the held shift is state, and a second instance would be a
+      // second, divergent copy of it.
+      provide: SHIFT_SERVICE,
+      useExisting: ShiftService,
+    },
+    {
+      // Real from the start, like SHIFT_SERVICE: the shifts endpoint existed
+      // before this service did.
+      provide: SCHEDULE_SERVICE,
+      useExisting: ScheduleService,
     },
   ],
 };

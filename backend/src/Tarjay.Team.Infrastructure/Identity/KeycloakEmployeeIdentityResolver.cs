@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,58 +13,76 @@ using Tarjay.Team.Domain.Identity;
 namespace Tarjay.Team.Infrastructure.Identity;
 
 /// <summary>
-/// Resolves an employee's identity through Keycloak, using the OIDC password grant to verify the
-/// Employee ID and PIN and the userinfo endpoint to read the role, department, and job function the
-/// realm holds for that employee.
+/// Resolves an employee's session through Keycloak, using the OIDC password grant to verify the
+/// Employee ID and PIN, the userinfo endpoint to read the role, department, and job function the
+/// realm holds for that employee, and the Admin API to end whatever other sessions that employee
+/// still holds.
 /// </summary>
 /// <remarks>
-/// Two calls, and the split is deliberate: the token endpoint is the credential check, the userinfo
-/// endpoint is the identity lookup. Keeping them separate is what lets a rejected credential and a
-/// misconfigured employee record surface as different failures instead of one vague one.
+/// The first two calls are split deliberately: the token endpoint is the credential check, the
+/// userinfo endpoint is the identity lookup. Keeping them separate is what lets a rejected
+/// credential and a misconfigured employee record surface as different failures instead of one
+/// vague one. The third — ending the employee's other sessions — happens before this method
+/// returns and not in the background, so a caller holding a session knows it is the only one. The
+/// tokens the password grant issued are passed back untouched; this store mints nothing of its own.
 /// </remarks>
 public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
 {
     private readonly HttpClient _httpClient;
+    private readonly IKeycloakSessionAdministrator _sessionAdministrator;
     private readonly KeycloakOptions _options;
     private readonly ILogger<KeycloakEmployeeIdentityResolver> _logger;
 
     /// <summary>Initializes the resolver.</summary>
     public KeycloakEmployeeIdentityResolver(
         HttpClient httpClient,
+        IKeycloakSessionAdministrator sessionAdministrator,
         IOptions<KeycloakOptions> options,
         ILogger<KeycloakEmployeeIdentityResolver> logger)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(sessionAdministrator);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _httpClient = httpClient;
+        _sessionAdministrator = sessionAdministrator;
         _options = options.Value;
         _logger = logger;
     }
 
     /// <inheritdoc />
-    public async Task<EmployeeIdentity> ResolveAsync(string employeeId, string pin, CancellationToken cancellationToken)
+    public async Task<EmployeeSession> ResolveAsync(string employeeId, string pin, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(employeeId);
         ArgumentException.ThrowIfNullOrWhiteSpace(pin);
 
-        var accessToken = await RequestAccessTokenAsync(employeeId, pin, cancellationToken);
-        var identity = await ReadIdentityAsync(employeeId, accessToken, cancellationToken);
+        var grant = await RequestGrantAsync(employeeId, pin, cancellationToken);
+        var (identity, subject) = await ReadIdentityAsync(employeeId, grant.AccessToken, cancellationToken);
+
+        // Before the session is handed back, never after. A caller that got a session may rely on
+        // it being this employee's only live one, and a termination still in flight would make
+        // that a guess rather than a guarantee.
+        await _sessionAdministrator.TerminateOtherSessionsAsync(subject, grant.SessionState, cancellationToken);
 
         // Note the absence of the PIN here, and in every other log line on this path: the
         // Employee ID identifies the sign-in for anyone reading the logs, and the PIN is never
-        // what makes a log line useful.
+        // what makes a log line useful. The tokens are held to the same rule.
         _logger.LogInformation(
             "Employee {EmployeeId} signed in as {Role} in {Department}",
             identity.EmployeeId,
             identity.Role,
             identity.Department);
 
-        return identity;
+        return new EmployeeSession
+        {
+            Identity = identity,
+            AccessToken = grant.AccessToken,
+            RefreshToken = grant.RefreshToken,
+        };
     }
 
-    private async Task<string> RequestAccessTokenAsync(string employeeId, string pin, CancellationToken cancellationToken)
+    private async Task<TokenGrant> RequestGrantAsync(string employeeId, string pin, CancellationToken cancellationToken)
     {
         var form = new List<KeyValuePair<string, string>>
         {
@@ -112,17 +128,35 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
 
         using var payload = await ReadJsonAsync(response, employeeId, cancellationToken);
 
-        if (!payload.RootElement.TryGetProperty("access_token", out var accessToken)
-            || accessToken.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(accessToken.GetString()))
+        var accessToken = ReadString(payload.RootElement, "access_token");
+        if (string.IsNullOrWhiteSpace(accessToken))
         {
             throw Unreachable("the token endpoint returned no access token", employeeId);
         }
 
-        return accessToken.GetString()!;
+        // Kept rather than discarded: the device refreshes on its own schedule, and that refresh is
+        // also how a device whose session was ended elsewhere finds out. Without this it could not.
+        var refreshToken = ReadString(payload.RootElement, "refresh_token");
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            throw Unreachable("the token endpoint returned no refresh token", employeeId);
+        }
+
+        var sessionState = ReadString(payload.RootElement, "session_state");
+        if (string.IsNullOrWhiteSpace(sessionState))
+        {
+            // Without it there is no way to tell the session just created from the ones that are
+            // meant to end, and the only safe answers left are "end nothing" or "end everything
+            // including this one". Both break the promise quietly, so this fails loudly instead.
+            throw CannotTerminate(
+                "the token endpoint named no session, so this sign-in's own session cannot be told apart from the employee's others",
+                employeeId);
+        }
+
+        return new TokenGrant(accessToken, refreshToken, sessionState);
     }
 
-    private async Task<EmployeeIdentity> ReadIdentityAsync(
+    private async Task<(EmployeeIdentity Identity, string Subject)> ReadIdentityAsync(
         string employeeId,
         string accessToken,
         CancellationToken cancellationToken)
@@ -144,41 +178,47 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
         using var payload = await ReadJsonAsync(response, employeeId, cancellationToken);
         var claims = payload.RootElement;
 
-        var department = ReadClaim(claims, _options.DepartmentClaim);
-        if (string.IsNullOrWhiteSpace(department))
+        // The tier, department, and job function are read the same way the manager approval check
+        // reads them. Sign-in is stricter than that shared read: it refuses an identity with no
+        // department or job function rather than accepting an empty one. The shared read checks the
+        // tier first, so an identity missing both the tier and the department is refused for the
+        // tier.
+        var authority = KeycloakIdentityClaims.ReadAuthority(
+            claims,
+            _options,
+            detail => Incomplete(detail, employeeId));
+
+        if (authority.Department.Length == 0)
         {
             throw Incomplete(FormattableString.Invariant($"no {_options.DepartmentClaim} claim was supplied"), employeeId);
         }
 
-        var jobFunction = ReadClaim(claims, _options.JobFunctionClaim);
-        if (string.IsNullOrWhiteSpace(jobFunction))
+        if (authority.JobFunction.Length == 0)
         {
             throw Incomplete(FormattableString.Invariant($"no {_options.JobFunctionClaim} claim was supplied"), employeeId);
         }
 
-        var roleClaim = ReadClaim(claims, _options.RoleClaim);
-        if (string.IsNullOrWhiteSpace(roleClaim))
+        // The realm's own id for this employee, which is what the Admin API answers to — the
+        // Employee ID they typed is a username, and asking the Admin API about a username means a
+        // search that could match more than one person.
+        var subject = KeycloakIdentityClaims.ReadClaim(claims, "sub");
+        if (string.IsNullOrWhiteSpace(subject))
         {
-            throw Incomplete(FormattableString.Invariant($"no {_options.RoleClaim} claim was supplied"), employeeId);
+            throw Incomplete("no sub claim was supplied", employeeId);
         }
 
-        if (!TryParseRole(roleClaim, out var role))
+        var identity = new EmployeeIdentity
         {
-            // An unrecognized tier is not defaulted to Associate. Guessing downward would hand
-            // someone the wrong authority quietly, which is worse than refusing the sign-in.
-            throw Incomplete(
-                FormattableString.Invariant($"the {_options.RoleClaim} claim was \"{roleClaim}\", which is not one of the four roles the store recognizes"),
-                employeeId);
-        }
-
-        return new EmployeeIdentity
-        {
-            EmployeeId = ReadClaim(claims, "preferred_username") ?? employeeId,
-            Name = ReadClaim(claims, "name") ?? ReadClaim(claims, "preferred_username") ?? employeeId,
-            Role = role,
-            Department = department,
-            JobFunction = jobFunction,
+            EmployeeId = KeycloakIdentityClaims.ReadClaim(claims, "preferred_username") ?? employeeId,
+            Name = KeycloakIdentityClaims.ReadClaim(claims, "name")
+                ?? KeycloakIdentityClaims.ReadClaim(claims, "preferred_username")
+                ?? employeeId,
+            Role = authority.Role,
+            Department = authority.Department,
+            JobFunction = authority.JobFunction,
         };
+
+        return (identity, subject);
     }
 
     private async Task<HttpResponseMessage> SendAsync(
@@ -241,6 +281,16 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
             : new IdentityProviderUnreachableException(reason, inner);
     }
 
+    private SessionTerminationFailedException CannotTerminate(string reason, string employeeId)
+    {
+        _logger.LogWarning(
+            "Sign-in for employee {EmployeeId} was refused because their other sessions could not be ended: {Reason}",
+            employeeId,
+            reason);
+
+        return new SessionTerminationFailedException(reason);
+    }
+
     private EmployeeIdentityIncompleteException Incomplete(string detail, string employeeId)
     {
         _logger.LogWarning(
@@ -255,54 +305,21 @@ public sealed class KeycloakEmployeeIdentityResolver : IEmployeeIdentityResolver
         FormattableString.Invariant(
             $"{_options.Authority.TrimEnd('/')}/realms/{_options.Realm}/protocol/openid-connect/{endpoint}");
 
-    private static string? ReadClaim(JsonElement claims, string claimName)
+    private static string? ReadString(JsonElement payload, string propertyName)
     {
-        if (claims.ValueKind != JsonValueKind.Object
-            || !claims.TryGetProperty(claimName, out var claim))
+        if (payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
         {
             return null;
         }
 
-        return claim.ValueKind switch
-        {
-            JsonValueKind.String => claim.GetString(),
-
-            // Keycloak renders a multi-valued user attribute as an array even when a single value
-            // is configured, so a one-element array is read as that value rather than refused.
-            JsonValueKind.Array => claim.EnumerateArray()
-                .Where(element => element.ValueKind == JsonValueKind.String)
-                .Select(element => element.GetString())
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
-
-            _ => null,
-        };
+        return property.GetString();
     }
 
-    private static bool TryParseRole(string roleClaim, out EmployeeRole role)
-    {
-        // Compared with separators and casing stripped, so "department-manager",
-        // "department_manager", and "DepartmentManager" all resolve to the same tier. The realm's
-        // choice of spelling is not something this store should be brittle about.
-        var normalized = new string(roleClaim.Where(char.IsLetterOrDigit).ToArray())
-            .ToLower(CultureInfo.InvariantCulture);
-
-        switch (normalized)
-        {
-            case "associate":
-                role = EmployeeRole.Associate;
-                return true;
-            case "departmentmanager":
-                role = EmployeeRole.DepartmentManager;
-                return true;
-            case "storemanager":
-                role = EmployeeRole.StoreManager;
-                return true;
-            case "receivingassociate":
-                role = EmployeeRole.ReceivingAssociate;
-                return true;
-            default:
-                role = default;
-                return false;
-        }
-    }
+    /// <summary>
+    /// What the password grant answered with: the two tokens the device keeps, and the realm's own
+    /// name for the session they belong to.
+    /// </summary>
+    private sealed record TokenGrant(string AccessToken, string RefreshToken, string SessionState);
 }
