@@ -94,18 +94,36 @@ interface ScreenObservation {
   readonly alertTexts: readonly string[];
 }
 
+/**
+ * The pathname and the alerts are two separate reads, so a redirect landing
+ * between them would pair `/sale` with Login's own explanation — a sample of a
+ * screen that never existed, and exactly what `expectNoTransitionalScreen`
+ * fails on. Reading the pathname again afterwards detects that, and the sample
+ * is retaken rather than discarded: dropping it would also drop a genuine
+ * alert on the sale screen in the instant before a redirect, which is the case
+ * the assertion exists to catch.
+ */
 async function observe(page: Page): Promise<ScreenObservation> {
-  const pathname = new URL(page.url()).pathname;
+  for (;;) {
+    const pathname = new URL(page.url()).pathname;
+    const alertTexts = await readAlertTexts(page);
 
+    if (new URL(page.url()).pathname === pathname) {
+      return { pathname, alertTexts };
+    }
+  }
+}
+
+async function readAlertTexts(page: Page): Promise<string[]> {
   try {
     const alertTexts = await page.getByRole('alert').allTextContents();
 
-    return { pathname, alertTexts: alertTexts.map((text) => text.trim()) };
+    return alertTexts.map((text) => text.trim());
   } catch {
     // Defensive only. The app routes client-side, so the execution context is
     // not torn down mid-sample; a pathname with no alert reading is still a
     // usable sample if that ever changes.
-    return { pathname, alertTexts: [] };
+    return [];
   }
 }
 
