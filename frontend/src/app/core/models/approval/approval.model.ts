@@ -25,3 +25,13 @@ export interface ApprovalCredentials {
   employeeId: string;
   pin: string;
 }
+
+/**
+ * What the approval modal hands back to the action that opened it: the
+ * manager to show, and the credentials the action submits with its own
+ * request, where they are checked again (API map, design row D11).
+ */
+export interface ManagerApproval {
+  approver: Approver;
+  credentials: ApprovalCredentials;
+}
